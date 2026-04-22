@@ -10,11 +10,16 @@ build:
 run: build
 	@./bin/gym
 
-test:
-	@go test -v ./...
+test/unit:
+	@go test $$(go list ./... | grep -v /integration_tests) 2>&1 | grep -v "^\?" || true
+
+test/integration:
+	@go test -v ./internal/integration_tests/...
+
+test: test/unit test/integration
 
 infra/up:
-	@docker compose up -d postgres
+	@docker compose up -d postgres redis
 
 infra/down:
 	@docker compose down
@@ -26,7 +31,7 @@ docker/down:
 	@docker compose down
 
 migrate/install:
-	@go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+	@go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 
 migrate/new:
 	@test -n "$(name)" || (echo "usage: make migrate/new name=<migration_name>" && exit 1)
