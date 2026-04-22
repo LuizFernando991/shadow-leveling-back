@@ -5,6 +5,7 @@ bin/
 
 # Environment
 .env
+.env.test
 
 # IDE
 .idea/

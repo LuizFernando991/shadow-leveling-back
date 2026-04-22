@@ -30,10 +30,23 @@ type AuthConfig struct {
 	TokenTTL  time.Duration
 }
 
+type EmailConfig struct {
+	ResendAPIKey string
+	FromAddress  string
+}
+
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
 type Config struct {
-	App  AppConfig
-	DB   DBConfig
-	Auth AuthConfig
+	App   AppConfig
+	DB    DBConfig
+	Auth  AuthConfig
+	Email EmailConfig
+	Redis RedisConfig
 }
 
 func Load() *Config {
@@ -59,6 +72,15 @@ func Load() *Config {
 		Auth: AuthConfig{
 			JWTSecret: mustGetEnv("AUTH_JWT_SECRET"),
 			TokenTTL:  mustGetEnvAsDuration("AUTH_TOKEN_TTL"),
+		},
+		Email: EmailConfig{
+			ResendAPIKey: os.Getenv("RESEND_API_KEY"),
+			FromAddress:  os.Getenv("EMAIL_FROM"),
+		},
+		Redis: RedisConfig{
+			Addr:     mustGetEnv("REDIS_ADDR"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       0,
 		},
 	}
 }
