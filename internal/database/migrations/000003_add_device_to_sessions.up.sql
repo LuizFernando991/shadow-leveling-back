@@ -1,0 +1,3 @@
+ALTER TABLE sessions
+    ADD COLUMN user_agent TEXT NOT NULL DEFAULT '',
+    ADD COLUMN ip_address VARCHAR(45) NOT NULL DEFAULT '';

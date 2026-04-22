@@ -4,15 +4,18 @@ import (
 	"net/http"
 
 	"github.com/LuizFernando991/gym-api/internal/config"
+	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/infra/http/docs"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/middleware"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type Handlers struct {
+type Modules struct {
+	Auth *auth.Module
 }
 
-func NewRouter(cfg *config.Config, handlers Handlers) http.Handler {
+func NewRouter(cfg *config.Config, modules Modules) http.Handler {
 	r := mux.NewRouter()
 
 	r.Use(middleware.CORS)
@@ -26,12 +29,12 @@ func NewRouter(cfg *config.Config, handlers Handlers) http.Handler {
 	r.NotFoundHandler = http.HandlerFunc(notFound)
 	r.MethodNotAllowedHandler = http.HandlerFunc(methodNotAllowed)
 
-	registerRoutes(r, cfg, handlers)
+	registerRoutes(r, cfg, modules)
 
 	return r
 }
 
-func registerRoutes(r *mux.Router, cfg *config.Config, handlers Handlers) {
+func registerRoutes(r *mux.Router, cfg *config.Config, modules Modules) {
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"status":"ok"}`))
 	}).Methods(http.MethodGet)
@@ -39,6 +42,9 @@ func registerRoutes(r *mux.Router, cfg *config.Config, handlers Handlers) {
 	if cfg.App.MetricsEnabled {
 		r.Handle("/metrics", promhttp.Handler()).Methods(http.MethodGet)
 	}
+
+	modules.Auth.RegisterRoutes(r)
+	docs.RegisterRoutes(r)
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
