@@ -13,12 +13,15 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrForbidden     = errors.New("forbidden")
-	ErrInvalidCursor = errors.New("invalid cursor")
+	ErrNotFound                  = errors.New("not found")
+	ErrForbidden                 = errors.New("forbidden")
+	ErrInvalidCursor             = errors.New("invalid cursor")
+	ErrWorkoutExerciseLimit      = errors.New("workout exercise limit reached")
+	ErrInvalidExerciseReordering = errors.New("invalid exercise reordering")
 )
 
 const defaultPageSize = 20
+const maxWorkoutExercises = 50
 
 type Service interface {
 	CreateExercise(ctx context.Context, req CreateExerciseRequest) (*Exercise, error)
@@ -34,6 +37,7 @@ type Service interface {
 	AddWorkoutExercise(ctx context.Context, workoutID, userID string, req AddWorkoutExerciseRequest) (*WorkoutExercise, error)
 	UpdateWorkoutExercise(ctx context.Context, weID, workoutID, userID string, req UpdateWorkoutExerciseRequest) (*WorkoutExercise, error)
 	DeleteWorkoutExercise(ctx context.Context, weID, workoutID, userID string) error
+	ReorderWorkoutExercises(ctx context.Context, workoutID, userID string, req ReorderWorkoutExercisesRequest) error
 
 	CreateSession(ctx context.Context, userID string, req CreateWorkoutSessionRequest) (*WorkoutSession, error)
 	GetSession(ctx context.Context, id, userID string) (*WorkoutSessionDetail, error)
@@ -166,7 +170,16 @@ func (s *service) GetWorkout(ctx context.Context, id, userID string) (*WorkoutDe
 	if w.UserID != userID {
 		return nil, ErrForbidden
 	}
-	return &WorkoutDetail{Workout: *w, Exercises: exercises}, nil
+	if exercises == nil {
+		exercises = []WorkoutExercise{}
+	}
+
+	doneToday, err := s.repo.HasCompletedSessionOnDate(ctx, id, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("workout: check completed session for today: %w", err)
+	}
+
+	return &WorkoutDetail{Workout: *w, Exercises: exercises, DoneToday: doneToday}, nil
 }
 
 func (s *service) ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error) {
@@ -250,6 +263,13 @@ func (s *service) AddWorkoutExercise(ctx context.Context, workoutID, userID stri
 	if err := s.ownsWorkout(ctx, workoutID, userID); err != nil {
 		return nil, err
 	}
+	totalExercises, err := s.repo.CountWorkoutExercises(ctx, workoutID)
+	if err != nil {
+		return nil, fmt.Errorf("workout: count workout exercises: %w", err)
+	}
+	if totalExercises >= maxWorkoutExercises {
+		return nil, ErrWorkoutExerciseLimit
+	}
 	we, err := s.repo.AddWorkoutExercise(ctx, workoutID, req.ExerciseID, req.Sets, req.RepsMin, req.RepsMax, req.Duration, req.Note, req.SortOrder)
 	if err != nil {
 		return nil, fmt.Errorf("workout: add workout exercise: %w", err)
@@ -267,6 +287,9 @@ func (s *service) UpdateWorkoutExercise(ctx context.Context, weID, workoutID, us
 	}
 	if err != nil {
 		return nil, fmt.Errorf("workout: get workout exercise: %w", err)
+	}
+	if existing.WorkoutID != workoutID {
+		return nil, ErrNotFound
 	}
 
 	sets := existing.Sets
@@ -305,9 +328,46 @@ func (s *service) DeleteWorkoutExercise(ctx context.Context, weID, workoutID, us
 	if err := s.ownsWorkout(ctx, workoutID, userID); err != nil {
 		return err
 	}
+	existing, err := s.repo.GetWorkoutExercise(ctx, weID)
+	if isNotFound(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("workout: get workout exercise: %w", err)
+	}
+	if existing.WorkoutID != workoutID {
+		return ErrNotFound
+	}
 	if err := s.repo.DeleteWorkoutExercise(ctx, weID); err != nil {
 		return fmt.Errorf("workout: delete workout exercise: %w", err)
 	}
+	return nil
+}
+
+func (s *service) ReorderWorkoutExercises(ctx context.Context, workoutID, userID string, req ReorderWorkoutExercisesRequest) error {
+	if err := s.ownsWorkout(ctx, workoutID, userID); err != nil {
+		return err
+	}
+
+	seenIDs := make(map[string]struct{}, len(req.Exercises))
+	orders := make([]WorkoutExerciseOrder, 0, len(req.Exercises))
+	for _, exercise := range req.Exercises {
+		if _, exists := seenIDs[exercise.ID]; exists {
+			return ErrInvalidExerciseReordering
+		}
+		seenIDs[exercise.ID] = struct{}{}
+		orders = append(orders, WorkoutExerciseOrder{
+			ID:        exercise.ID,
+			SortOrder: exercise.SortOrder,
+		})
+	}
+
+	if err := s.repo.ReorderWorkoutExercises(ctx, workoutID, orders); isNotFound(err) {
+		return ErrNotFound
+	} else if err != nil {
+		return fmt.Errorf("workout: reorder workout exercises: %w", err)
+	}
+
 	return nil
 }
 

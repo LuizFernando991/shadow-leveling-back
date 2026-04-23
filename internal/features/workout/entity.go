@@ -72,6 +72,12 @@ type Workout struct {
 type WorkoutDetail struct {
 	Workout
 	Exercises []WorkoutExercise `json:"exercises"`
+	DoneToday bool              `json:"done_today"`
+}
+
+type WorkoutExerciseOrder struct {
+	ID        string
+	SortOrder int
 }
 
 type WorkoutExercise struct {

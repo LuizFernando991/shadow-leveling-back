@@ -456,6 +456,7 @@ paths:
     post:
       tags: [Workouts]
       summary: Add exercise to workout
+      description: Adds an exercise to the workout. A workout can have at most 50 exercises.
       security:
         - bearerAuth: []
       parameters:
@@ -478,6 +479,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkoutExercise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workouts/{id}/exercises/reorder:
+    patch:
+      tags: [Workouts]
+      summary: Reorder workout exercises
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderWorkoutExercisesRequest'
+      responses:
+        '204':
+          description: Exercises reordered
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1060,6 +1092,9 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/WorkoutExercise'
+            done_today:
+              type: boolean
+              description: Whether the workout already has a complete session recorded for the current day.
 
     CreateWorkoutRequest:
       type: object
@@ -1185,6 +1220,28 @@ components:
         note:
           type: string
           nullable: true
+        sort_order:
+          type: integer
+          minimum: 0
+
+    ReorderWorkoutExercisesRequest:
+      type: object
+      required: [exercises]
+      properties:
+        exercises:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ReorderWorkoutExerciseItem'
+
+    ReorderWorkoutExerciseItem:
+      type: object
+      required: [id, sort_order]
+      properties:
+        id:
+          type: string
+          format: uuid
         sort_order:
           type: integer
           minimum: 0

@@ -17,13 +17,16 @@ type Repository interface {
 	GetWorkout(ctx context.Context, id string) (*Workout, error)
 	GetWorkoutWithExercises(ctx context.Context, id string) (*Workout, []WorkoutExercise, error)
 	ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error)
+	HasCompletedSessionOnDate(ctx context.Context, workoutID string, date time.Time) (bool, error)
 	UpdateWorkout(ctx context.Context, id, name string, description *string, days DaySlice, active bool) (*Workout, error)
 	DeleteWorkout(ctx context.Context, id string) error
 
 	AddWorkoutExercise(ctx context.Context, workoutID, exerciseID string, sets int, repsMin, repsMax, duration *int, note *string, sortOrder int) (*WorkoutExercise, error)
+	CountWorkoutExercises(ctx context.Context, workoutID string) (int, error)
 	GetWorkoutExercise(ctx context.Context, id string) (*WorkoutExercise, error)
 	UpdateWorkoutExercise(ctx context.Context, id string, sets int, repsMin, repsMax, duration *int, note *string, sortOrder int) (*WorkoutExercise, error)
 	DeleteWorkoutExercise(ctx context.Context, id string) error
+	ReorderWorkoutExercises(ctx context.Context, workoutID string, orders []WorkoutExerciseOrder) error
 
 	CreateWorkoutSession(ctx context.Context, workoutID string, date time.Time, status SessionStatus) (*WorkoutSession, error)
 	GetWorkoutSession(ctx context.Context, id string) (*WorkoutSession, error)
@@ -115,6 +118,15 @@ func scanWorkout(s interface{ Scan(...any) error }, w *Workout) error {
 	return nil
 }
 
+func scanWorkoutWithDoneToday(s interface{ Scan(...any) error }, w *Workout, doneToday *bool) error {
+	var daysStr string
+	if err := s.Scan(&w.ID, &w.UserID, &w.Name, &w.Description, &daysStr, &w.Active, &w.CreatedAt, &w.UpdatedAt, doneToday); err != nil {
+		return err
+	}
+	w.DaysOfWeek = ParseDaySlice(daysStr)
+	return nil
+}
+
 func (r *postgresRepository) CreateWorkout(ctx context.Context, userID, name string, description *string, days DaySlice) (*Workout, error) {
 	var w Workout
 	err := scanWorkout(r.db.QueryRowContext(ctx,
@@ -179,12 +191,25 @@ func (r *postgresRepository) GetWorkoutWithExercises(ctx context.Context, id str
 	if err := rows.Err(); err != nil {
 		return nil, nil, fmt.Errorf("workout: rows error: %w", err)
 	}
+	if exercises == nil {
+		exercises = []WorkoutExercise{}
+	}
 	return w, exercises, nil
 }
 
 func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT `+workoutCols+` FROM workouts WHERE user_id = $1 ORDER BY created_at DESC`,
+		`SELECT `+workoutCols+`,
+		        EXISTS (
+		            SELECT 1
+		            FROM workout_sessions ws
+		            WHERE ws.workout_id = workouts.id
+		              AND ws.date = CURRENT_DATE
+		              AND ws.status = 'complete'
+		        ) AS done_today
+		 FROM workouts
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -193,13 +218,16 @@ func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string) ([
 	defer rows.Close()
 
 	var workouts []Workout
+	var doneTodayByWorkoutID = make(map[string]bool)
 	var ids []string
 	for rows.Next() {
 		var w Workout
-		if err := scanWorkout(rows, &w); err != nil {
+		var doneToday bool
+		if err := scanWorkoutWithDoneToday(rows, &w, &doneToday); err != nil {
 			return nil, fmt.Errorf("workout: scan workout: %w", err)
 		}
 		workouts = append(workouts, w)
+		doneTodayByWorkoutID[w.ID] = doneToday
 		ids = append(ids, w.ID)
 	}
 	if err := rows.Err(); err != nil {
@@ -221,9 +249,27 @@ func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string) ([
 		if exs == nil {
 			exs = []WorkoutExercise{}
 		}
-		result[i] = WorkoutDetail{Workout: w, Exercises: exs}
+		result[i] = WorkoutDetail{Workout: w, Exercises: exs, DoneToday: doneTodayByWorkoutID[w.ID]}
 	}
 	return result, nil
+}
+
+func (r *postgresRepository) HasCompletedSessionOnDate(ctx context.Context, workoutID string, date time.Time) (bool, error) {
+	var doneToday bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (
+		     SELECT 1
+		     FROM workout_sessions
+		     WHERE workout_id = $1
+		       AND date = $2::date
+		       AND status = 'complete'
+		 )`,
+		workoutID, date,
+	).Scan(&doneToday)
+	if err != nil {
+		return false, fmt.Errorf("workout: check completed session on date: %w", err)
+	}
+	return doneToday, nil
 }
 
 func (r *postgresRepository) fetchExercisesForWorkouts(ctx context.Context, workoutIDs []string) (map[string][]WorkoutExercise, error) {
@@ -305,6 +351,18 @@ func (r *postgresRepository) AddWorkoutExercise(ctx context.Context, workoutID, 
 	return &we, nil
 }
 
+func (r *postgresRepository) CountWorkoutExercises(ctx context.Context, workoutID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM workout_exercises WHERE workout_id = $1`,
+		workoutID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("workout: count workout exercises: %w", err)
+	}
+	return count, nil
+}
+
 func (r *postgresRepository) GetWorkoutExercise(ctx context.Context, id string) (*WorkoutExercise, error) {
 	var we WorkoutExercise
 	err := r.db.QueryRowContext(ctx,
@@ -337,6 +395,39 @@ func (r *postgresRepository) DeleteWorkoutExercise(ctx context.Context, id strin
 	_, err := r.db.ExecContext(ctx, `DELETE FROM workout_exercises WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("workout: delete workout exercise: %w", err)
+	}
+	return nil
+}
+
+func (r *postgresRepository) ReorderWorkoutExercises(ctx context.Context, workoutID string, orders []WorkoutExerciseOrder) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("workout: begin reorder workout exercises tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, order := range orders {
+		result, err := tx.ExecContext(ctx,
+			`UPDATE workout_exercises
+			 SET sort_order = $1
+			 WHERE id = $2 AND workout_id = $3`,
+			order.SortOrder, order.ID, workoutID,
+		)
+		if err != nil {
+			return fmt.Errorf("workout: reorder workout exercise: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("workout: check reordered workout exercise rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return sql.ErrNoRows
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("workout: commit reorder workout exercises tx: %w", err)
 	}
 	return nil
 }

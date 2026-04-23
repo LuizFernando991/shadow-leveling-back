@@ -34,6 +34,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	api.HandleFunc("/workouts/{id}", h.updateWorkout).Methods(http.MethodPut)
 	api.HandleFunc("/workouts/{id}", h.deleteWorkout).Methods(http.MethodDelete)
 	api.HandleFunc("/workouts/{id}/exercises", h.addWorkoutExercise).Methods(http.MethodPost)
+	api.HandleFunc("/workouts/{id}/exercises/reorder", h.reorderWorkoutExercises).Methods(http.MethodPatch)
 	api.HandleFunc("/workouts/{id}/exercises/{weId}", h.updateWorkoutExercise).Methods(http.MethodPut)
 	api.HandleFunc("/workouts/{id}/exercises/{weId}", h.deleteWorkoutExercise).Methods(http.MethodDelete)
 	api.HandleFunc("/workouts/{id}/progress", h.getWorkoutProgress).Methods(http.MethodGet)
@@ -234,11 +235,49 @@ func (h *Handler) addWorkoutExercise(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusForbidden, "access denied")
 		return
 	}
+	if errors.Is(err, ErrWorkoutExerciseLimit) {
+		httputil.Error(w, http.StatusBadRequest, "workout cannot have more than 50 exercises")
+		return
+	}
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	httputil.JSON(w, http.StatusCreated, we)
+}
+
+func (h *Handler) reorderWorkoutExercises(w http.ResponseWriter, r *http.Request) {
+	userID := httputil.SessionFromContext(r.Context()).UserID
+	workoutID := mux.Vars(r)["id"]
+	var req ReorderWorkoutExercisesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	err := h.svc.ReorderWorkoutExercises(r.Context(), workoutID, userID, req)
+	if errors.Is(err, ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "workout exercise not found")
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		httputil.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+	if errors.Is(err, ErrInvalidExerciseReordering) {
+		httputil.Error(w, http.StatusBadRequest, "exercise ids must be unique")
+		return
+	}
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) updateWorkoutExercise(w http.ResponseWriter, r *http.Request) {

@@ -40,6 +40,15 @@ type UpdateWorkoutExerciseRequest struct {
 	SortOrder *int    `json:"sort_order" validate:"omitempty,min=0"`
 }
 
+type ReorderWorkoutExercisesRequest struct {
+	Exercises []ReorderWorkoutExerciseItem `json:"exercises" validate:"required,min=1,max=50,dive"`
+}
+
+type ReorderWorkoutExerciseItem struct {
+	ID        string `json:"id"         validate:"required,uuid"`
+	SortOrder int    `json:"sort_order" validate:"min=0"`
+}
+
 type CreateWorkoutSessionRequest struct {
 	WorkoutID string        `json:"workout_id" validate:"required,uuid"`
 	Date      time.Time     `json:"date"       validate:"required"`
