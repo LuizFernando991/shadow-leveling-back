@@ -28,3 +28,7 @@ func NewModule(db *sql.DB, cfg config.AuthConfig, emailSender email.Sender, rate
 func (m *Module) RegisterRoutes(r *mux.Router) {
 	m.handler.RegisterRoutes(r, m.middleware)
 }
+
+func (m *Module) Middleware() func(http.Handler) http.Handler {
+	return m.middleware
+}

@@ -5,6 +5,9 @@ info:
 
 tags:
   - name: Auth
+  - name: Exercises
+  - name: Workouts
+  - name: WorkoutSessions
 
 paths:
   /auth/register:
@@ -235,6 +238,623 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ── Exercises ────────────────────────────────────────────────────────────────
+
+  /exercises:
+    get:
+      tags: [Exercises]
+      summary: List exercises
+      description: |
+        Returns a cursor-paginated list of exercises. Use `?search=` to filter by
+        name (case-insensitive). Pass the `cursor.next_cursor` value from the
+        previous response as `?cursor=` to fetch the next page.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Filter by name (partial, case-insensitive)
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Opaque cursor from a previous response to fetch the next page
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of items per page
+      responses:
+        '200':
+          description: Paginated list of exercises
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExercisePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Exercises]
+      summary: Create exercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExerciseRequest'
+      responses:
+        '201':
+          description: Exercise created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exercise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exercises/{id}:
+    get:
+      tags: [Exercises]
+      summary: Get exercise
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exercise'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Workouts ─────────────────────────────────────────────────────────────────
+
+  /workouts:
+    get:
+      tags: [Workouts]
+      summary: List user workouts
+      description: Returns all workouts belonging to the authenticated user, each including its exercises.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of workouts with exercises
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkoutDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Workouts]
+      summary: Create workout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkoutRequest'
+      responses:
+        '201':
+          description: Workout created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workouts/{id}:
+    get:
+      tags: [Workouts]
+      summary: Get workout with exercises
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workout with exercises
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Workouts]
+      summary: Update workout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkoutRequest'
+      responses:
+        '200':
+          description: Updated workout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Workouts]
+      summary: Delete workout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Workout deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workouts/{id}/exercises:
+    post:
+      tags: [Workouts]
+      summary: Add exercise to workout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWorkoutExerciseRequest'
+      responses:
+        '201':
+          description: Exercise added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutExercise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workouts/{id}/exercises/{weId}:
+    put:
+      tags: [Workouts]
+      summary: Update workout exercise
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: weId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkoutExerciseRequest'
+      responses:
+        '200':
+          description: Updated workout exercise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutExercise'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Workouts]
+      summary: Remove exercise from workout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: weId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Exercise removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workouts/{id}/progress:
+    get:
+      tags: [Workouts]
+      summary: Get exercise evolution for a workout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: exercise_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter progress to a single exercise
+      responses:
+        '200':
+          description: Progress per exercise
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExerciseProgress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Workout Sessions ──────────────────────────────────────────────────────────
+
+  /workout-sessions/missed:
+    get:
+      tags: [WorkoutSessions]
+      summary: List missed workout sessions
+      description: |
+        Returns days where a workout was scheduled but no session (complete or
+        incomplete) was recorded. Bonus sessions (unscheduled days) are excluded.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date (YYYY-MM-DD). Defaults to today.
+      responses:
+        '200':
+          description: List of missed sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MissedSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workout-sessions:
+    get:
+      tags: [WorkoutSessions]
+      summary: List workout sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workout_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: YYYY-MM-DD
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: YYYY-MM-DD
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkoutSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [WorkoutSessions]
+      summary: Create workout session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkoutSessionRequest'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workout-sessions/{id}:
+    get:
+      tags: [WorkoutSessions]
+      summary: Get session with recorded sets
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutSessionDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [WorkoutSessions]
+      summary: Update session status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkoutSessionRequest'
+      responses:
+        '200':
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workout-sessions/{id}/sets:
+    post:
+      tags: [WorkoutSessions]
+      summary: Record a set
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordSetRequest'
+      responses:
+        '201':
+          description: Set recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExerciseSet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workout-sessions/{id}/sets/{setId}:
+    put:
+      tags: [WorkoutSessions]
+      summary: Update a set
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSetRequest'
+      responses:
+        '200':
+          description: Updated set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExerciseSet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [WorkoutSessions]
+      summary: Delete a set
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: setId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Set deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -342,6 +962,394 @@ components:
       properties:
         error:
           type: string
+
+    # ── Pagination ────────────────────────────────────────────────────────────
+
+    CursorMeta:
+      type: object
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque token to pass as `?cursor=` to retrieve the next page. Null when there are no more pages.
+        has_more:
+          type: boolean
+
+    ExercisePage:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Exercise'
+        cursor:
+          $ref: '#/components/schemas/CursorMeta'
+
+    # ── Exercise schemas ──────────────────────────────────────────────────────
+
+    Exercise:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Bench Press
+        type:
+          type: string
+          enum: [repetition, time]
+        unit:
+          type: string
+          example: kg
+        created_at:
+          type: string
+          format: date-time
+
+    CreateExerciseRequest:
+      type: object
+      required: [name, type, unit]
+      properties:
+        name:
+          type: string
+          example: Bench Press
+        type:
+          type: string
+          enum: [repetition, time]
+        unit:
+          type: string
+          example: kg
+
+    # ── Workout schemas ───────────────────────────────────────────────────────
+
+    Workout:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Workout A
+        description:
+          type: string
+          nullable: true
+        days_of_week:
+          type: array
+          items:
+            type: string
+            enum: [monday, tuesday, wednesday, thursday, friday]
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkoutDetail:
+      allOf:
+        - $ref: '#/components/schemas/Workout'
+        - type: object
+          properties:
+            exercises:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkoutExercise'
+
+    CreateWorkoutRequest:
+      type: object
+      required: [name, days_of_week]
+      properties:
+        name:
+          type: string
+          example: Workout A
+        description:
+          type: string
+          nullable: true
+        days_of_week:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [monday, tuesday, wednesday, thursday, friday]
+
+    UpdateWorkoutRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        days_of_week:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [monday, tuesday, wednesday, thursday, friday]
+        active:
+          type: boolean
+
+    WorkoutExercise:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workout_id:
+          type: string
+          format: uuid
+        exercise_id:
+          type: string
+          format: uuid
+        exercise:
+          $ref: '#/components/schemas/Exercise'
+        sets:
+          type: integer
+          example: 4
+        reps_min:
+          type: integer
+          nullable: true
+          example: 8
+        reps_max:
+          type: integer
+          nullable: true
+          example: 12
+        duration:
+          type: integer
+          nullable: true
+          description: Duration in seconds
+        note:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    AddWorkoutExerciseRequest:
+      type: object
+      required: [exercise_id, sets]
+      properties:
+        exercise_id:
+          type: string
+          format: uuid
+        sets:
+          type: integer
+          minimum: 1
+        reps_min:
+          type: integer
+          minimum: 1
+          nullable: true
+        reps_max:
+          type: integer
+          minimum: 1
+          nullable: true
+        duration:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Duration in seconds
+        note:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+          minimum: 0
+          default: 0
+
+    UpdateWorkoutExerciseRequest:
+      type: object
+      properties:
+        sets:
+          type: integer
+          minimum: 1
+        reps_min:
+          type: integer
+          minimum: 1
+          nullable: true
+        reps_max:
+          type: integer
+          minimum: 1
+          nullable: true
+        duration:
+          type: integer
+          minimum: 1
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+          minimum: 0
+
+    # ── Session schemas ───────────────────────────────────────────────────────
+
+    WorkoutSession:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workout_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [complete, incomplete, skipped]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WorkoutSessionDetail:
+      allOf:
+        - $ref: '#/components/schemas/WorkoutSession'
+        - type: object
+          properties:
+            sets:
+              type: array
+              items:
+                $ref: '#/components/schemas/ExerciseSet'
+
+    CreateWorkoutSessionRequest:
+      type: object
+      required: [workout_id, date, status]
+      properties:
+        workout_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [complete, incomplete, skipped]
+
+    UpdateWorkoutSessionRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [complete, incomplete, skipped]
+
+    ExerciseSet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        exercise_id:
+          type: string
+          format: uuid
+        set_number:
+          type: integer
+        reps:
+          type: integer
+          nullable: true
+        weight:
+          type: number
+          format: float
+          nullable: true
+        duration:
+          type: integer
+          nullable: true
+          description: Duration in seconds
+        created_at:
+          type: string
+          format: date-time
+
+    RecordSetRequest:
+      type: object
+      required: [exercise_id, set_number]
+      properties:
+        exercise_id:
+          type: string
+          format: uuid
+        set_number:
+          type: integer
+          minimum: 1
+        reps:
+          type: integer
+          minimum: 0
+          nullable: true
+        weight:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+        duration:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    UpdateSetRequest:
+      type: object
+      properties:
+        reps:
+          type: integer
+          minimum: 0
+          nullable: true
+        weight:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+        duration:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    MissedSession:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        workout_id:
+          type: string
+          format: uuid
+        workout_name:
+          type: string
+
+    ExerciseProgress:
+      type: object
+      properties:
+        exercise_id:
+          type: string
+          format: uuid
+        exercise_name:
+          type: string
+        exercise_type:
+          type: string
+          enum: [repetition, time]
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionStat'
+
+    SessionStat:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        best_set:
+          $ref: '#/components/schemas/ExerciseSet'
 
   responses:
     BadRequest:

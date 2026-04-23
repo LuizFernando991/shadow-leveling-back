@@ -8,6 +8,7 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/database"
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/features/workout"
 	"github.com/LuizFernando991/gym-api/internal/infra/cache"
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
@@ -46,7 +47,8 @@ func main() {
 	}
 
 	modules := router.Modules{
-		Auth: auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
+		Auth:    auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
+		Workout: workout.NewModule(db),
 	}
 
 	httpRouter := router.NewRouter(cfg, modules)
