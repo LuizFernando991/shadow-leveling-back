@@ -11,7 +11,7 @@ run: build
 	@./bin/gym
 
 test/unit:
-	@go test $$(go list ./... | grep -v /integration_tests) 2>&1 | grep -v "^\?" || true
+	@go test $$(go list ./... | grep -v /integration_tests) 2>&1 | grep -v "^\?"
 
 test/integration:
 	@go test -v ./internal/integration_tests/...
