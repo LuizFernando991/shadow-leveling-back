@@ -7,6 +7,7 @@ tags:
   - name: Auth
   - name: Exercises
   - name: Tasks
+  - name: UserMetrics
   - name: Workouts
   - name: WorkoutSessions
 
@@ -486,6 +487,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /user-metrics/today:
+    get:
+      tags: [UserMetrics]
+      summary: Get today's missions and progress
+      description: |
+        Returns today's scheduled workout missions and task missions for the
+        authenticated user, along with progress counters per section and overall.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Today's missions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayMissionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ── Workouts ─────────────────────────────────────────────────────────────────
 
@@ -1308,6 +1328,85 @@ components:
           type: string
           format: date-time
           description: Occurrence date to complete. Defaults to today when omitted.
+
+    Progress:
+      type: object
+      properties:
+        total:
+          type: integer
+        completed:
+          type: integer
+        pending:
+          type: integer
+
+    WorkoutMission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_completed:
+          type: boolean
+
+    TaskMission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        level:
+          type: string
+          enum: [hard, medium, easy, no_rank]
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        occurrence_date:
+          type: string
+          format: date
+        is_optional:
+          type: boolean
+        is_completed:
+          type: boolean
+
+    WorkoutMissions:
+      type: object
+      properties:
+        progress:
+          $ref: '#/components/schemas/Progress'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkoutMission'
+
+    TaskMissions:
+      type: object
+      properties:
+        progress:
+          $ref: '#/components/schemas/Progress'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskMission'
+
+    TodayMissionsResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        progress:
+          $ref: '#/components/schemas/Progress'
+        workouts:
+          $ref: '#/components/schemas/WorkoutMissions'
+        tasks:
+          $ref: '#/components/schemas/TaskMissions'
 
     # ── Workout schemas ───────────────────────────────────────────────────────
 
