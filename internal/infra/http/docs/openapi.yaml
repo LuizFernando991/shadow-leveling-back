@@ -6,6 +6,7 @@ info:
 tags:
   - name: Auth
   - name: Exercises
+  - name: Tasks
   - name: Workouts
   - name: WorkoutSessions
 
@@ -325,6 +326,164 @@ paths:
                 $ref: '#/components/schemas/Exercise'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Tasks ───────────────────────────────────────────────────────────────────
+
+  /tasks:
+    post:
+      tags: [Tasks]
+      summary: Create task
+      description: |
+        Creates a task schedule. Recurring tasks are completed per occurrence
+        date, so completing a daily, weekly, monthly, or custom task does not
+        complete the entire series.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/uncompleted:
+    get:
+      tags: [Tasks]
+      summary: List uncompleted tasks for a day
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date to inspect (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Scheduled task occurrences that are not completed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskOccurrence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/month:
+    get:
+      tags: [Tasks]
+      summary: List tasks for a month
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          example: 2026
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 4
+      responses:
+        '200':
+          description: Scheduled task occurrences in the month
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskOccurrence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/day:
+    get:
+      tags: [Tasks]
+      summary: List tasks for a specific day
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date to inspect (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Scheduled task occurrences for the day
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskOccurrence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/{id}/complete:
+    patch:
+      tags: [Tasks]
+      summary: Complete a task occurrence
+      description: Completes the task for the provided date, or today when omitted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteTaskRequest'
+      responses:
+        '200':
+          description: Completed task occurrence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskOccurrence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1051,6 +1210,104 @@ components:
         unit:
           type: string
           example: kg
+
+    # ── Task schemas ──────────────────────────────────────────────────────────
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+          enum: [hard, medium, easy, no_rank]
+        title:
+          type: string
+          example: Drink water
+        description:
+          type: string
+          nullable: true
+        initial_date:
+          type: string
+          format: date
+        final_date:
+          type: string
+          format: date
+        recurrence_type:
+          type: string
+          enum: [one_time, weekly, daily, monthly, custom]
+        custom_days_of_week:
+          type: array
+          items:
+            type: string
+            enum: [sunday, monday, tuesday, wednesday, thursday, friday, saturday]
+        is_optional:
+          type: boolean
+        is_completed:
+          type: boolean
+          description: Completion status for the occurrence being returned.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskOccurrence:
+      allOf:
+        - $ref: '#/components/schemas/Task'
+        - type: object
+          properties:
+            occurrence_date:
+              type: string
+              format: date
+
+    CreateTaskRequest:
+      type: object
+      required: [level, title, initial_date, final_date, recurrence_type]
+      properties:
+        level:
+          type: string
+          enum: [hard, medium, easy, no_rank]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 1000
+          nullable: true
+        initial_date:
+          type: string
+          format: date-time
+          description: Date portion is used.
+        final_date:
+          type: string
+          format: date-time
+          description: Date portion is used and must be on or after initial_date.
+        recurrence_type:
+          type: string
+          enum: [one_time, weekly, daily, monthly, custom]
+        custom_days_of_week:
+          type: array
+          description: Required when recurrence_type is custom; ignored otherwise.
+          items:
+            type: string
+            enum: [sunday, monday, tuesday, wednesday, thursday, friday, saturday]
+        is_optional:
+          type: boolean
+
+    CompleteTaskRequest:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: Occurrence date to complete. Defaults to today when omitted.
 
     # ── Workout schemas ───────────────────────────────────────────────────────
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
 	"github.com/LuizFernando991/gym-api/internal/infra/cache"
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
@@ -56,8 +57,9 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 
 	cfg := buildConfig()
 	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{})
+	taskModule := task.NewModule(db)
 	workoutModule := workout.NewModule(db)
-	h := router.NewRouter(cfg, router.Modules{Auth: authModule, Workout: workoutModule})
+	h := router.NewRouter(cfg, router.Modules{Auth: authModule, Task: taskModule, Workout: workoutModule})
 	srv := httptest.NewServer(h)
 
 	teardown := func() {
@@ -71,7 +73,7 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 // Truncate removes all rows from application tables, giving each test a clean
 // state without re-running migrations.
 func Truncate(db *sql.DB) error {
-	_, err := db.Exec(`TRUNCATE TABLE exercise_sets, workout_sessions, workout_exercises, workouts, exercises, email_verifications, sessions, users CASCADE`)
+	_, err := db.Exec(`TRUNCATE TABLE task_completions, tasks, exercise_sets, workout_sessions, workout_exercises, workouts, exercises, email_verifications, sessions, users CASCADE`)
 	return err
 }
 
