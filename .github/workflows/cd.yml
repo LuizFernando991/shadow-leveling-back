@@ -56,7 +56,10 @@ jobs:
               "echo ECR_API_IMAGE=${{ env.REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:${{ env.IMAGE_TAG }} >> .env.tmp",
               "mv .env.tmp .env",
               "chmod 600 .env",
-              "./deploy.sh"
+              "set -a; source .env; set +a",
+              "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com",
+              "docker compose pull api",
+              "docker compose up -d api"
             ]' \
             --region "$AWS_REGION" \
             --query "Command.CommandId" \
