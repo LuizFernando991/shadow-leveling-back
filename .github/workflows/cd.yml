@@ -9,10 +9,10 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-  ECR_API_REPOSITORY: ${{ vars.ECR_API_REPOSITORY }}
-  EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+  AWS_REGION:          ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID:      ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_API_REPOSITORY:  ${{ vars.ECR_API_REPOSITORY }}
+  EC2_INSTANCE_ID:     ${{ secrets.EC2_INSTANCE_ID }}
 
 jobs:
   deploy:
@@ -24,37 +24,67 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region:     ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push API image
+      - name: Build e push da imagem do backend
         env:
-          REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          REGISTRY:  ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG .
-          docker tag $REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG $REGISTRY/$ECR_API_REPOSITORY:latest
+          docker build \
+            -t $REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG \
+            -t $REGISTRY/$ECR_API_REPOSITORY:latest \
+            .
           docker push $REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG
           docker push $REGISTRY/$ECR_API_REPOSITORY:latest
 
-      - name: Deploy backend via SSM
+      - name: Deploy via SSM
+        env:
+          REGISTRY:  ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy backend" \
+            --comment "Deploy backend $IMAGE_TAG" \
             --parameters 'commands=[
-              "if [ ! -f /opt/app/.env ]; then touch /opt/app/.env; fi",
-              "grep -v ^ECR_API_IMAGE= /opt/app/.env > /opt/app/.env.tmp || true",
-              "echo ECR_API_IMAGE=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_API_REPOSITORY }}:${{ github.sha }} >> /opt/app/.env.tmp",
-              "if ! grep -q ^DB_USER= /opt/app/.env.tmp; then echo DB_USER=${{ vars.DB_USER }} >> /opt/app/.env.tmp; fi",
-              "if ! grep -q ^DB_PASSWORD= /opt/app/.env.tmp; then echo DB_PASSWORD=${{ secrets.DB_PASSWORD }} >> /opt/app/.env.tmp; fi",
-              "if ! grep -q ^DB_NAME= /opt/app/.env.tmp; then echo DB_NAME=${{ vars.DB_NAME }} >> /opt/app/.env.tmp; fi",
-              "if ! grep -q ^AWS_REGION= /opt/app/.env.tmp; then echo AWS_REGION=${{ env.AWS_REGION }} >> /opt/app/.env.tmp; fi",
-              "if ! grep -q ^AWS_ACCOUNT_ID= /opt/app/.env.tmp; then echo AWS_ACCOUNT_ID=${{ env.AWS_ACCOUNT_ID }} >> /opt/app/.env.tmp; fi",
-              "mv /opt/app/.env.tmp /opt/app/.env",
-              "chmod 600 /opt/app/.env",
-              "cd /opt/app && ./deploy.sh"
+              "set -euo pipefail",
+              "cd /opt/app",
+              "grep -v ^ECR_API_IMAGE= .env > .env.tmp || true",
+              "echo ECR_API_IMAGE=${{ env.REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:${{ env.IMAGE_TAG }} >> .env.tmp",
+              "mv .env.tmp .env",
+              "chmod 600 .env",
+              "./deploy.sh"
             ]' \
+            --region "$AWS_REGION" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+
+          # Aguarda até 3 minutos pelo resultado
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
             --region "$AWS_REGION"
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query "Status" \
+            --output text)
+
+          echo "Status do comando: $STATUS"
+
+          if [ "$STATUS" != "Success" ]; then
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --region "$AWS_REGION" \
+              --query "StandardErrorContent" \
+              --output text
+            exit 1
+          fi
