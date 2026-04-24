@@ -51,15 +51,14 @@ jobs:
             --comment "Deploy backend $IMAGE_TAG" \
             --parameters 'commands=[
               "set -euo pipefail",
-              "cd /opt/app",
-              "grep -v ^ECR_API_IMAGE= .env > .env.tmp || true",
-              "echo ECR_API_IMAGE=${{ env.REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:${{ env.IMAGE_TAG }} >> .env.tmp",
-              "mv .env.tmp .env",
-              "chmod 600 .env",
-              "set -a; source .env; set +a",
+              "grep -v ^ECR_API_IMAGE= /opt/app/.env > /opt/app/.env.tmp || true",
+              "echo ECR_API_IMAGE=${{ env.REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:${{ env.IMAGE_TAG }} >> /opt/app/.env.tmp",
+              "mv /opt/app/.env.tmp /opt/app/.env",
+              "chmod 600 /opt/app/.env",
+              "set -a; source /opt/app/.env; set +a",
               "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com",
-              "docker compose pull api",
-              "docker compose up -d api"
+              "cd /opt/app && docker compose pull api",
+              "cd /opt/app && docker compose up -d api"
             ]' \
             --region "$AWS_REGION" \
             --query "Command.CommandId" \
