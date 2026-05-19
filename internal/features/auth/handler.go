@@ -22,11 +22,7 @@ func NewHandler(svc Service) *Handler {
 func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler) http.Handler) {
 	public := r.PathPrefix("/auth").Subrouter()
 	public.HandleFunc("/register", h.register).Methods(http.MethodPost)
-	public.HandleFunc("/register/verify", h.verifyRegistration).Methods(http.MethodPost)
-	public.HandleFunc("/register/resend", h.resendRegistrationCode).Methods(http.MethodPost)
 	public.HandleFunc("/login", h.login).Methods(http.MethodPost)
-	public.HandleFunc("/login/verify", h.verifyLogin).Methods(http.MethodPost)
-	public.HandleFunc("/login/resend", h.resendLoginCode).Methods(http.MethodPost)
 
 	private := r.PathPrefix("/auth").Subrouter()
 	private.Use(authMiddleware)
@@ -48,8 +44,9 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.IPAddress = clientIP(r)
+	req.UserAgent = r.UserAgent()
 
-	err := h.svc.Register(r.Context(), req)
+	session, err := h.svc.Register(r.Context(), req)
 	if errors.Is(err, ErrEmailTaken) {
 		httputil.Error(w, http.StatusConflict, "email already in use")
 		return
@@ -59,33 +56,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.JSON(w, http.StatusCreated, MessageResponse{Message: "verification code sent to your email"})
-}
-
-func (h *Handler) verifyRegistration(w http.ResponseWriter, r *http.Request) {
-	var req VerifyEmailRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	req.UserAgent = r.UserAgent()
-	req.IPAddress = clientIP(r)
-
-	session, err := h.svc.VerifyRegistration(r.Context(), req)
-	if errors.Is(err, ErrInvalidCode) {
-		httputil.Error(w, http.StatusUnprocessableEntity, "invalid or expired verification code")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusOK, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
+	httputil.JSON(w, http.StatusCreated, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -99,40 +70,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.IPAddress = clientIP(r)
+	req.UserAgent = r.UserAgent()
 
-	err := h.svc.RequestLogin(r.Context(), req)
+	session, err := h.svc.Login(r.Context(), req)
 	if errors.Is(err, ErrInvalidCredentials) {
 		httputil.Error(w, http.StatusUnauthorized, "invalid email or password")
-		return
-	}
-	if errors.Is(err, ErrEmailNotVerified) {
-		httputil.Error(w, http.StatusForbidden, "email not verified")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusOK, MessageResponse{Message: "verification code sent to your email"})
-}
-
-func (h *Handler) verifyLogin(w http.ResponseWriter, r *http.Request) {
-	var req VerifyEmailRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	req.UserAgent = r.UserAgent()
-	req.IPAddress = clientIP(r)
-
-	session, err := h.svc.VerifyLogin(r.Context(), req)
-	if errors.Is(err, ErrInvalidCode) {
-		httputil.Error(w, http.StatusUnprocessableEntity, "invalid or expired verification code")
 		return
 	}
 	if err != nil {
@@ -231,53 +173,6 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *Handler) resendRegistrationCode(w http.ResponseWriter, r *http.Request) {
-	var req ResendCodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	err := h.svc.ResendRegistrationCode(r.Context(), req.Email, clientIP(r))
-	if errors.Is(err, ErrRateLimitExceeded) {
-		httputil.Error(w, http.StatusTooManyRequests, "too many requests, please try again later")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusOK, MessageResponse{Message: "if eligible, a new verification code has been sent to your email"})
-}
-
-func (h *Handler) resendLoginCode(w http.ResponseWriter, r *http.Request) {
-	var req ResendCodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	err := h.svc.ResendLoginCode(r.Context(), req.Email, clientIP(r))
-	if errors.Is(err, ErrRateLimitExceeded) {
-		httputil.Error(w, http.StatusTooManyRequests, "too many requests, please try again later")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusOK, MessageResponse{Message: "if eligible, a new verification code has been sent to your email"})
-}
 
 func clientIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {

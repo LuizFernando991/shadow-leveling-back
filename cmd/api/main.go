@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 
@@ -12,8 +11,6 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
-	"github.com/LuizFernando991/gym-api/internal/infra/cache"
-	"github.com/LuizFernando991/gym-api/internal/infra/email"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/server"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -34,25 +31,10 @@ func main() {
 	}
 	defer db.Close()
 
-	redisClient := cache.NewRedisClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		slog.Error("redis connection failed", "error", err)
-		os.Exit(1)
-	}
-	defer redisClient.Close()
-	rateLimiter := cache.NewRedisRateLimiter(redisClient)
-
-	var emailSender email.Sender
-	if cfg.App.Env == "production" {
-		emailSender = email.NewResendSender(cfg.Email.ResendAPIKey, cfg.Email.FromAddress)
-	} else {
-		emailSender = email.NewDevSender()
-	}
-
 	levelingModule := leveling.NewModule(db)
 
 	modules := router.Modules{
-		Auth:        auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
+		Auth:        auth.NewModule(db, cfg.Auth),
 		Task:        task.NewModule(db),
 		UserMetrics: usermetrics.NewModule(db),
 		Workout:     workout.NewModule(db, levelingModule.Awarder()),
