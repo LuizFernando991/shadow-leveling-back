@@ -12,7 +12,7 @@ um resumo do que já está **pronto e funcional** para o Flutter consumir:
 
 | Módulo | O que está pronto |
 |---|---|
-| **Autenticação** | Registro, login via e-mail + código 2FA, logout, sessões |
+| **Autenticação** | Registro e login (token direto, sem 2FA), perfil/nickname, logout, sessões |
 | **Tarefas** | CRUD de tarefas com recorrência, listagem por dia/mês, conclusão |
 | **Exercícios** | Catálogo de exercícios com busca e paginação |
 | **Workouts** | CRUD de treinos, adição/reordenação de exercícios (todos os dias da semana incluindo sáb/dom) |
@@ -36,8 +36,9 @@ Todas as rotas da API retornam `Content-Type: application/json`.
 
 ## Autenticação
 
-O backend usa **Bearer Token** (não JWT). Após login/registro verificado, o
-servidor retorna um token hexadecimal de 64 caracteres.
+O backend usa **Bearer Token** (não JWT). O registro e o login retornam o
+token **diretamente** em uma única requisição — não há verificação por
+e-mail / código 2FA. O token é um hexadecimal de 64 caracteres.
 
 **Header obrigatório nas rotas privadas:**
 ```
@@ -63,8 +64,6 @@ Authorization: Bearer <token>
 | `403 Forbidden` | Recurso pertence a outro usuário |
 | `404 Not Found` | Recurso não encontrado |
 | `409 Conflict` | Email já cadastrado |
-| `422 Unprocessable Entity` | Código de verificação inválido/expirado |
-| `429 Too Many Requests` | Rate limit excedido (máx 3 códigos/hora) |
 | `500 Internal Server Error` | Erro interno |
 
 **Formato padrão de erro:**
@@ -85,7 +84,6 @@ Authorization: Bearer <token>
 
 ## 1.1 Registro de Usuário
 
-### Etapa 1 — Enviar cadastro
 ```
 POST /auth/register
 ```
@@ -98,53 +96,20 @@ POST /auth/register
 ```
 **Resposta 201:**
 ```json
-{ "message": "verification code sent to your email" }
-```
-**Erros:** `400` (dados inválidos), `409` (email já em uso)
-
----
-
-### Etapa 2 — Verificar código recebido por e-mail
-```
-POST /auth/register/verify
-```
-**Body:**
-```json
-{
-  "email": "user@example.com",
-  "code": "123456"
-}
-```
-**Resposta 200:**
-```json
 {
   "token": "a1b2c3...64chars",
   "expires_at": "2024-02-01T12:00:00Z"
 }
 ```
-**Erros:** `422` (código inválido ou expirado)
+> O token é retornado **imediatamente** — não há verificação por e-mail.
+> Já pode ser usado no header `Authorization: Bearer <token>`.
 
----
-
-### Reenviar código de registro
-```
-POST /auth/register/resend
-```
-**Body:**
-```json
-{ "email": "user@example.com" }
-```
-**Resposta 200:**
-```json
-{ "message": "if eligible, a new verification code has been sent..." }
-```
-**Erros:** `429` (máx 3 códigos por hora)
+**Erros:** `400` (dados inválidos), `409` (email já em uso)
 
 ---
 
 ## 1.2 Login
 
-### Etapa 1 — Enviar credenciais
 ```
 POST /auth/login
 ```
@@ -157,45 +122,14 @@ POST /auth/login
 ```
 **Resposta 200:**
 ```json
-{ "message": "verification code sent to your email" }
-```
-**Erros:** `401` (credenciais inválidas), `403` (email não verificado)
-
----
-
-### Etapa 2 — Verificar código de login
-```
-POST /auth/login/verify
-```
-**Body:**
-```json
-{
-  "email": "user@example.com",
-  "code": "123456"
-}
-```
-**Resposta 200:**
-```json
 {
   "token": "a1b2c3...64chars",
   "expires_at": "2024-02-01T12:00:00Z"
 }
 ```
+> O token é retornado **imediatamente** — não há verificação por e-mail / 2FA.
 
----
-
-### Reenviar código de login
-```
-POST /auth/login/resend
-```
-**Body:**
-```json
-{ "email": "user@example.com" }
-```
-**Resposta 200:**
-```json
-{ "message": "..." }
-```
+**Erros:** `401` (credenciais inválidas)
 
 ---
 
@@ -210,9 +144,36 @@ GET /auth/me
 {
   "id": "uuid",
   "email": "user@example.com",
+  "nickname": "ShadowHunter",
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
+> `nickname` é `null` até o usuário definir um via `PATCH /auth/me`.
+
+---
+
+### Atualizar Perfil (nickname)
+```
+PATCH /auth/me
+```
+**Body:**
+```json
+{ "nickname": "ShadowHunter" }
+```
+| Campo | Tipo | Obrigatório | Valores |
+|---|---|---|---|
+| `nickname` | string | sim | 2–30 chars |
+
+**Resposta 200:**
+```json
+{
+  "id": "uuid",
+  "email": "user@example.com",
+  "nickname": "ShadowHunter",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+**Erros:** `400` (nickname inválido)
 
 ---
 
@@ -1038,13 +999,10 @@ Retorna a especificação OpenAPI 3.0 em YAML.
 
 | Método | Endpoint | Auth | Descrição |
 |---|---|---|---|
-| `POST` | `/auth/register` | — | Criar conta |
-| `POST` | `/auth/register/verify` | — | Verificar código de cadastro |
-| `POST` | `/auth/register/resend` | — | Reenviar código de cadastro |
-| `POST` | `/auth/login` | — | Solicitar login |
-| `POST` | `/auth/login/verify` | — | Verificar código de login |
-| `POST` | `/auth/login/resend` | — | Reenviar código de login |
+| `POST` | `/auth/register` | — | Criar conta (retorna token) |
+| `POST` | `/auth/login` | — | Login (retorna token) |
 | `GET` | `/auth/me` | sim | Dados do usuário logado |
+| `PATCH` | `/auth/me` | sim | Atualizar nickname |
 | `POST` | `/auth/logout` | sim | Logout |
 | `GET` | `/auth/sessions` | sim | Listar sessões |
 | `DELETE` | `/auth/sessions/{id}` | sim | Revogar sessão |
@@ -1085,8 +1043,8 @@ Retorna a especificação OpenAPI 3.0 em YAML.
 ```
 Splash
   └─> Auth (não logado)
-        ├─ Tela de Login → POST /auth/login → POST /auth/login/verify
-        └─ Tela de Registro → POST /auth/register → POST /auth/register/verify
+        ├─ Tela de Login → POST /auth/login (retorna token direto)
+        └─ Tela de Registro → POST /auth/register (retorna token direto)
 
 Home (logado) — GET /user-metrics/today
   ├─ Lista de missões do dia (workouts + tasks)
@@ -1116,6 +1074,7 @@ Histórico
 
 Perfil / Progresso
   ├─ Dados do usuário → GET /auth/me
+  ├─ Editar nickname → PATCH /auth/me
   ├─ Nível, XP e streak → GET /me/level
   ├─ Sessões ativas → GET /auth/sessions
   └─ Logout → POST /auth/logout
