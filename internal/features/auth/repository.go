@@ -12,6 +12,7 @@ type Repository interface {
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
 	FindUserByID(ctx context.Context, id string) (*User, error)
 	MarkUserVerified(ctx context.Context, email string) error
+	UpdateNickname(ctx context.Context, userID, nickname string) (*User, error)
 
 	CreateSession(ctx context.Context, userID, token, userAgent, ipAddress string, expiresAt *time.Time) (*Session, error)
 	FindSessionByToken(ctx context.Context, token string) (*Session, error)
@@ -40,9 +41,9 @@ func (r *postgresRepository) CreateUser(ctx context.Context, email, passwordHash
 	err := r.db.QueryRowContext(ctx,
 		`INSERT INTO users (email, password_hash)
 		 VALUES ($1, $2)
-		 RETURNING id, email, password_hash, verified_at, created_at, updated_at`,
+		 RETURNING id, email, password_hash, nickname, verified_at, created_at, updated_at`,
 		email, passwordHash,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: create user: %w", err)
 	}
@@ -52,10 +53,10 @@ func (r *postgresRepository) CreateUser(ctx context.Context, email, passwordHash
 func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, verified_at, created_at, updated_at
+		`SELECT id, email, password_hash, nickname, verified_at, created_at, updated_at
 		 FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user: %w", err)
 	}
@@ -65,12 +66,26 @@ func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) 
 func (r *postgresRepository) FindUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, verified_at, created_at, updated_at
+		`SELECT id, email, password_hash, nickname, verified_at, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user by id: %w", err)
+	}
+	return &u, nil
+}
+
+func (r *postgresRepository) UpdateNickname(ctx context.Context, userID, nickname string) (*User, error) {
+	var u User
+	err := r.db.QueryRowContext(ctx,
+		`UPDATE users SET nickname = $2, updated_at = NOW()
+		 WHERE id = $1
+		 RETURNING id, email, password_hash, nickname, verified_at, created_at, updated_at`,
+		userID, nickname,
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("auth: update nickname: %w", err)
 	}
 	return &u, nil
 }

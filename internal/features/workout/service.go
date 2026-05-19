@@ -7,10 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
 )
+
+// XPAwarder is satisfied by the leveling module. Workout holds only this
+// interface so there is no import cycle between packages.
+type XPAwarder interface {
+	AwardWorkoutCompletion(ctx context.Context, userID, sessionID string, sessionDate time.Time) error
+}
 
 var (
 	ErrNotFound                  = errors.New("not found")
@@ -54,10 +61,11 @@ type Service interface {
 
 type service struct {
 	repo Repository
+	xp   XPAwarder
 }
 
-func NewService(repo Repository) Service {
-	return &service{repo: repo}
+func NewService(repo Repository, xp XPAwarder) Service {
+	return &service{repo: repo, xp: xp}
 }
 
 func isNotFound(err error) bool {
@@ -381,6 +389,11 @@ func (s *service) CreateSession(ctx context.Context, userID string, req CreateWo
 	if err != nil {
 		return nil, fmt.Errorf("workout: create session: %w", err)
 	}
+	if sess.Status == StatusComplete && s.xp != nil {
+		if err := s.xp.AwardWorkoutCompletion(ctx, userID, sess.ID, sess.Date); err != nil {
+			slog.Error("leveling: award xp on session create", "error", err, "session_id", sess.ID)
+		}
+	}
 	return sess, nil
 }
 
@@ -418,6 +431,7 @@ func (s *service) UpdateSession(ctx context.Context, id, userID string, req Upda
 		return nil, err
 	}
 
+	prevStatus := sess.Status
 	status := sess.Status
 	if req.Status != nil {
 		status = *req.Status
@@ -426,6 +440,11 @@ func (s *service) UpdateSession(ctx context.Context, id, userID string, req Upda
 	updated, err := s.repo.UpdateWorkoutSession(ctx, id, status)
 	if err != nil {
 		return nil, fmt.Errorf("workout: update session: %w", err)
+	}
+	if updated.Status == StatusComplete && prevStatus != StatusComplete && s.xp != nil {
+		if err := s.xp.AwardWorkoutCompletion(ctx, userID, updated.ID, updated.Date); err != nil {
+			slog.Error("leveling: award xp on session update", "error", err, "session_id", updated.ID)
+		}
 	}
 	return updated, nil
 }

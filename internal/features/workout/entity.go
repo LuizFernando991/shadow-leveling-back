@@ -28,6 +28,8 @@ const (
 	Wednesday DayOfWeek = "wednesday"
 	Thursday  DayOfWeek = "thursday"
 	Friday    DayOfWeek = "friday"
+	Saturday  DayOfWeek = "saturday"
+	Sunday    DayOfWeek = "sunday"
 )
 
 // DaySlice is a slice of DayOfWeek with helpers for Postgres TEXT[] conversion.

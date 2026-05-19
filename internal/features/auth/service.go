@@ -41,6 +41,7 @@ type Service interface {
 	ResendRegistrationCode(ctx context.Context, email, ip string) error
 	ResendLoginCode(ctx context.Context, email, ip string) error
 	Me(ctx context.Context, userID string) (*User, error)
+	UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error)
 	Logout(ctx context.Context, sessionID string) error
 	ListSessions(ctx context.Context, userID string) ([]*Session, error)
 	RevokeSession(ctx context.Context, userID, sessionID string) error
@@ -180,6 +181,14 @@ func (s *service) Me(ctx context.Context, userID string) (*User, error) {
 			return nil, ErrUnauthorized
 		}
 		return nil, fmt.Errorf("auth: me: %w", err)
+	}
+	return user, nil
+}
+
+func (s *service) UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error) {
+	user, err := s.repo.UpdateNickname(ctx, userID, req.Nickname)
+	if err != nil {
+		return nil, fmt.Errorf("auth: update profile: %w", err)
 	}
 	return user, nil
 }

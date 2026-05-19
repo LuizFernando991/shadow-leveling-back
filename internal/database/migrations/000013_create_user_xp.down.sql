@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS xp_events;
+DROP TABLE IF EXISTS user_xp;

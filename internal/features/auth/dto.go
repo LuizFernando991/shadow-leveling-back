@@ -44,5 +44,10 @@ type SessionResponse struct {
 type UserResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
+	Nickname  *string   `json:"nickname"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type UpdateProfileRequest struct {
+	Nickname string `json:"nickname" validate:"required,min=2,max=30"`
 }

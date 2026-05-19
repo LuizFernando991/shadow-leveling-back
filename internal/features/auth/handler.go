@@ -31,6 +31,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	private := r.PathPrefix("/auth").Subrouter()
 	private.Use(authMiddleware)
 	private.HandleFunc("/me", h.me).Methods(http.MethodGet)
+	private.HandleFunc("/me", h.updateProfile).Methods(http.MethodPatch)
 	private.HandleFunc("/logout", h.logout).Methods(http.MethodPost)
 	private.HandleFunc("/sessions", h.listSessions).Methods(http.MethodGet)
 	private.HandleFunc("/sessions/{id}", h.revokeSession).Methods(http.MethodDelete)
@@ -152,6 +153,31 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, UserResponse{
 		ID:        user.ID,
 		Email:     user.Email,
+		Nickname:  user.Nickname,
+		CreatedAt: user.CreatedAt,
+	})
+}
+
+func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
+	session := httputil.SessionFromContext(r.Context())
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, err := h.svc.UpdateProfile(r.Context(), session.UserID, req)
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, UserResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Nickname:  user.Nickname,
 		CreatedAt: user.CreatedAt,
 	})
 }

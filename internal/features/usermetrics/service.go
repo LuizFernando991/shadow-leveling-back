@@ -83,10 +83,7 @@ func (s *service) GetTodayMissions(ctx context.Context, userID string) (*TodayMi
 }
 
 func scheduledWorkoutsForDay(workouts []workout.WorkoutDetail, day time.Time) []WorkoutMission {
-	targetDay, ok := workoutDayOfWeek(day.Weekday())
-	if !ok {
-		return []WorkoutMission{}
-	}
+	targetDay := workoutDayOfWeek(day.Weekday())
 
 	items := make([]WorkoutMission, 0, len(workouts))
 	for _, w := range workouts {
@@ -112,20 +109,22 @@ func hasWorkoutDay(days workout.DaySlice, target workout.DayOfWeek) bool {
 	return false
 }
 
-func workoutDayOfWeek(day time.Weekday) (workout.DayOfWeek, bool) {
+func workoutDayOfWeek(day time.Weekday) workout.DayOfWeek {
 	switch day {
 	case time.Monday:
-		return workout.Monday, true
+		return workout.Monday
 	case time.Tuesday:
-		return workout.Tuesday, true
+		return workout.Tuesday
 	case time.Wednesday:
-		return workout.Wednesday, true
+		return workout.Wednesday
 	case time.Thursday:
-		return workout.Thursday, true
+		return workout.Thursday
 	case time.Friday:
-		return workout.Friday, true
+		return workout.Friday
+	case time.Saturday:
+		return workout.Saturday
 	default:
-		return "", false
+		return workout.Sunday
 	}
 }
 

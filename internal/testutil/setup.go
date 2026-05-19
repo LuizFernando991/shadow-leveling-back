@@ -19,6 +19,7 @@ import (
 
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/features/leveling"
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
@@ -60,12 +61,14 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{})
 	taskModule := task.NewModule(db)
 	userMetricsModule := usermetrics.NewModule(db)
-	workoutModule := workout.NewModule(db)
+	levelingModule := leveling.NewModule(db)
+	workoutModule := workout.NewModule(db, levelingModule.Awarder())
 	h := router.NewRouter(cfg, router.Modules{
 		Auth:        authModule,
 		Task:        taskModule,
 		UserMetrics: userMetricsModule,
 		Workout:     workoutModule,
+		Leveling:    levelingModule,
 	})
 	srv := httptest.NewServer(h)
 

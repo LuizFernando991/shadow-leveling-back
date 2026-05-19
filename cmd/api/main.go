@@ -8,6 +8,7 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/database"
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/features/leveling"
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
@@ -48,11 +49,14 @@ func main() {
 		emailSender = email.NewDevSender()
 	}
 
+	levelingModule := leveling.NewModule(db)
+
 	modules := router.Modules{
 		Auth:        auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
 		Task:        task.NewModule(db),
 		UserMetrics: usermetrics.NewModule(db),
-		Workout:     workout.NewModule(db),
+		Workout:     workout.NewModule(db, levelingModule.Awarder()),
+		Leveling:    levelingModule,
 	}
 
 	httpRouter := router.NewRouter(cfg, modules)

@@ -11,9 +11,9 @@ type Module struct {
 	handler *Handler
 }
 
-func NewModule(db *sql.DB) *Module {
+func NewModule(db *sql.DB, xp XPAwarder) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo)
+	svc := NewService(repo, xp)
 	return &Module{handler: NewHandler(svc)}
 }
 
