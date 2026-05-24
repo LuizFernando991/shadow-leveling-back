@@ -65,27 +65,41 @@ jobs:
           image: ${{ steps.build-image.outputs.image }}
 
       - name: run migrations
+        env:
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSLMODE: ${{ secrets.DB_SSLMODE }}
         run: |
+          ENCODED_PASSWORD=$(python3 -c "import urllib.parse, os; print(urllib.parse.quote(os.environ['DB_PASSWORD']))")
+
+          DATABASE_URL="postgres://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+
           aws ecs run-task \
             --cluster $ECS_CLUSTER \
             --launch-type FARGATE \
-            --task-definition shadow-api \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-0a6b550c424d7d716,subnet-0dd48025e5c659613],securityGroups=[sg-00a318a9fd18221f7],assignPublicIp=DISABLED}" \
-            --overrides '{
-              "containerOverrides": [
-                {
-                  "name": "shadow-api",
-                  "command": [
-                    "migrate",
-                    "-path",
-                    "internal/database/migrations",
-                    "-database",
-                    "postgres://'${{ secrets.DB_USER }}':'${{ secrets.DB_PASSWORD }}'@'${{ secrets.DB_HOST }}':'${{ secrets.DB_PORT }}'/'${{ secrets.DB_NAME }}'?sslmode='${{ secrets.DB_SSLMODE }}'",
-                    "up"
-                  ]
-                }
-              ]
-            }'
+            --task-definition ${{ steps.task-def.outputs.task-definition }} \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxxxx,subnet-yyyyyyyy],securityGroups=[sg-xxxxxxxx],assignPublicIp=DISABLED}" \
+            --overrides "$(cat <<EOF
+{
+  \"containerOverrides\": [
+    {
+      \"name\": \"shadow-api\",
+      \"command\": [
+        \"migrate\",
+        \"-path\",
+        \"internal/database/migrations\",
+        \"-database\",
+        \"${DATABASE_URL}\",
+        \"up\"
+      ]
+    }
+  ]
+}
+EOF
+)"
 
       - name: deploy to ecs
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
