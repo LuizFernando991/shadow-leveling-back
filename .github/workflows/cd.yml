@@ -64,6 +64,29 @@ jobs:
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-image.outputs.image }}
 
+      - name: run migrations
+        run: |
+          aws ecs run-task \
+            --cluster $ECS_CLUSTER \
+            --launch-type FARGATE \
+            --task-definition shadow-api \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-0a6b550c424d7d716,subnet-0dd48025e5c659613],securityGroups=[sg-00a318a9fd18221f7],assignPublicIp=DISABLED}" \
+            --overrides '{
+              "containerOverrides": [
+                {
+                  "name": "shadow-api",
+                  "command": [
+                    "migrate",
+                    "-path",
+                    "internal/database/migrations",
+                    "-database",
+                    "postgres://'${{ secrets.DB_USER }}':'${{ secrets.DB_PASSWORD }}'@'${{ secrets.DB_HOST }}':'${{ secrets.DB_PORT }}'/'${{ secrets.DB_NAME }}'?sslmode='${{ secrets.DB_SSLMODE }}'",
+                    "up"
+                  ]
+                }
+              ]
+            }'
+
       - name: deploy to ecs
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
