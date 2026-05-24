@@ -46,7 +46,7 @@ type Config struct {
 	DB    DBConfig
 	Auth  AuthConfig
 	Email EmailConfig
-	Redis RedisConfig
+	// Redis RedisConfig
 }
 
 func Load() *Config {
@@ -77,11 +77,11 @@ func Load() *Config {
 			ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 			FromAddress:  os.Getenv("EMAIL_FROM"),
 		},
-		Redis: RedisConfig{
-			Addr:     mustGetEnv("REDIS_ADDR"),
-			Password: os.Getenv("REDIS_PASSWORD"),
-			DB:       0,
-		},
+		// Redis: RedisConfig{
+		// 	Addr:     mustGetEnv("REDIS_ADDR"),
+		// 	Password: os.Getenv("REDIS_PASSWORD"),
+		// 	DB:       0,
+		// },
 	}
 }
 
