@@ -77,29 +77,30 @@ jobs:
 
           DATABASE_URL="postgres://${DB_USER}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
 
+          cat > overrides.json <<EOF
+          {
+            "containerOverrides": [
+              {
+                "name": "shadow-api",
+                "command": [
+                  "migrate",
+                  "-path",
+                  "internal/database/migrations",
+                  "-database",
+                  "${DATABASE_URL}",
+                  "up"
+                ]
+              }
+            ]
+          }
+          EOF
+
           aws ecs run-task \
             --cluster $ECS_CLUSTER \
             --launch-type FARGATE \
             --task-definition ${{ steps.task-def.outputs.task-definition }} \
             --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxxxx,subnet-yyyyyyyy],securityGroups=[sg-xxxxxxxx],assignPublicIp=DISABLED}" \
-            --overrides "$(cat <<EOF
-{
-  \"containerOverrides\": [
-    {
-      \"name\": \"shadow-api\",
-      \"command\": [
-        \"migrate\",
-        \"-path\",
-        \"internal/database/migrations\",
-        \"-database\",
-        \"${DATABASE_URL}\",
-        \"up\"
-      ]
-    }
-  ]
-}
-EOF
-)"
+            --overrides file://overrides.json
 
       - name: deploy to ecs
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
