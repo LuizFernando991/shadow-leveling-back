@@ -99,7 +99,7 @@ jobs:
             --cluster $ECS_CLUSTER \
             --launch-type FARGATE \
             --task-definition shadow-api \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxxxx,subnet-yyyyyyyy],securityGroups=[sg-xxxxxxxx],assignPublicIp=DISABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-0a6b550c424d7d716,subnet-0dd48025e5c659613],securityGroups=[sg-00a318a9fd18221f7],assignPublicIp=DISABLED}" \
             --overrides file://overrides.json
 
       - name: deploy to ecs
