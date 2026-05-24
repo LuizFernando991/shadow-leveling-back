@@ -98,7 +98,7 @@ jobs:
           aws ecs run-task \
             --cluster $ECS_CLUSTER \
             --launch-type FARGATE \
-            --task-definition ${{ steps.task-def.outputs.task-definition }} \
+            --task-definition shadow-api \
             --network-configuration "awsvpcConfiguration={subnets=[subnet-xxxxxxxx,subnet-yyyyyyyy],securityGroups=[sg-xxxxxxxx],assignPublicIp=DISABLED}" \
             --overrides file://overrides.json
 
