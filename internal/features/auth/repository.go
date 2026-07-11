@@ -20,6 +20,9 @@ type Repository interface {
 	ListSessionsByUserID(ctx context.Context, userID string) ([]*Session, error)
 	RevokeSession(ctx context.Context, id string) error
 
+	FindUserIDByProviderSubject(ctx context.Context, provider, subject string) (string, error)
+	CreateIdentity(ctx context.Context, userID, provider, subject string) error
+
 	CreateEmailVerification(ctx context.Context, email, code string, vtype VerificationType, expiresAt time.Time) (*EmailVerification, error)
 	FindEmailVerification(ctx context.Context, email, code string, vtype VerificationType) (*EmailVerification, error)
 	DeleteEmailVerification(ctx context.Context, id string) error
@@ -97,6 +100,31 @@ func (r *postgresRepository) MarkUserVerified(ctx context.Context, email string)
 	)
 	if err != nil {
 		return fmt.Errorf("auth: mark user verified: %w", err)
+	}
+	return nil
+}
+
+// ── Identities ────────────────────────────────────────────────────────────────
+
+func (r *postgresRepository) FindUserIDByProviderSubject(ctx context.Context, provider, subject string) (string, error) {
+	var userID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT user_id FROM identities WHERE provider = $1 AND provider_subject = $2`,
+		provider, subject,
+	).Scan(&userID)
+	if err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
+func (r *postgresRepository) CreateIdentity(ctx context.Context, userID, provider, subject string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO identities (user_id, provider, provider_subject) VALUES ($1, $2, $3)`,
+		userID, provider, subject,
+	)
+	if err != nil {
+		return fmt.Errorf("auth: create identity: %w", err)
 	}
 	return nil
 }

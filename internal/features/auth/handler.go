@@ -36,6 +36,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	public.HandleFunc("/login", h.login).Methods(http.MethodPost)
 	public.HandleFunc("/email/request", h.requestEmailCode).Methods(http.MethodPost)
 	public.HandleFunc("/email/verify", h.verifyEmailCode).Methods(http.MethodPost)
+	public.HandleFunc("/social", h.socialLogin).Methods(http.MethodPost)
 
 	private := r.PathPrefix("/auth").Subrouter()
 	private.Use(authMiddleware)
@@ -146,6 +147,31 @@ func (h *Handler) verifyEmailCode(w http.ResponseWriter, r *http.Request) {
 	session, err := h.svc.VerifyEmailCode(r.Context(), req)
 	if errors.Is(err, ErrInvalidCode) {
 		httputil.Error(w, http.StatusUnprocessableEntity, "invalid or expired code")
+		return
+	}
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
+}
+
+func (h *Handler) socialLogin(w http.ResponseWriter, r *http.Request) {
+	var req SocialLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.IPAddress = clientIP(r)
+	req.UserAgent = r.UserAgent()
+
+	session, err := h.svc.SocialLogin(r.Context(), req)
+	if errors.Is(err, ErrInvalidToken) {
+		httputil.Error(w, http.StatusUnauthorized, "invalid provider token")
 		return
 	}
 	if err != nil {

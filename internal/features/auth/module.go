@@ -16,9 +16,9 @@ type Module struct {
 	middleware func(http.Handler) http.Handler
 }
 
-func NewModule(db *sql.DB, cfg config.AuthConfig, sender email.Sender, limiter httputil.RateAllower) *Module {
+func NewModule(db *sql.DB, cfg config.AuthConfig, sender email.Sender, limiter httputil.RateAllower, verifier TokenVerifier) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo, cfg, sender)
+	svc := NewService(repo, cfg, sender, verifier)
 	return &Module{
 		handler:    NewHandler(svc, limiter),
 		middleware: sharedmiddleware.Auth(svc),

@@ -18,6 +18,7 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/server"
+	oidcinfra "github.com/LuizFernando991/gym-api/internal/infra/oidc"
 	"github.com/LuizFernando991/gym-api/internal/infra/push"
 	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 	"github.com/LuizFernando991/gym-api/internal/shared/httputil"
@@ -43,12 +44,13 @@ func main() {
 	rateLimiter := buildRateLimiter(cfg.Redis)
 	pushSender := push.NewExpoSender(cfg.Push.ExpoAccessToken)
 	emailSender := buildEmailSender(cfg.Email)
+	socialVerifier := oidcinfra.New(cfg.Social.GoogleClientIDs, cfg.Social.AppleClientIDs)
 
 	levelingModule := leveling.NewModule(db)
 	notificationModule := notification.NewModule(db, pushSender)
 
 	modules := router.Modules{
-		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
+		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter, socialVerifier),
 		Task:         task.NewModule(db),
 		UserMetrics:  usermetrics.NewModule(db),
 		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),

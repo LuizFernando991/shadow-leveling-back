@@ -20,6 +20,13 @@ type EmailCodeRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }
 
+type SocialLoginRequest struct {
+	Provider  string `json:"provider" validate:"required,oneof=google apple"`
+	IDToken   string `json:"id_token" validate:"required"`
+	UserAgent string `json:"-"`
+	IPAddress string `json:"-"`
+}
+
 type VerifyEmailRequest struct {
 	Email     string `json:"email" validate:"required,email"`
 	Code      string `json:"code"  validate:"required,len=6,numeric"`

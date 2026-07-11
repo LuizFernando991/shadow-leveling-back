@@ -30,6 +30,14 @@ func (s *Session) IsValid() bool {
 	return s.ExpiresAt == nil || s.ExpiresAt.After(time.Now())
 }
 
+// ProviderClaims is the identity a social provider (Google/Apple) asserts about
+// a user, extracted from a verified ID token.
+type ProviderClaims struct {
+	Subject       string `json:"subject"` // stable per-provider user id (the token's "sub")
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+}
+
 type VerificationType string
 
 const (

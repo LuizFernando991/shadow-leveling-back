@@ -26,13 +26,21 @@ var (
 	ErrSessionNotFound    = errors.New("session not found")
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrInvalidCode        = errors.New("invalid or expired code")
+	ErrInvalidToken       = errors.New("invalid provider token")
 )
+
+// TokenVerifier verifies a social provider's ID token and returns the identity
+// it asserts. Implemented by internal/infra/oidc in production; faked in tests.
+type TokenVerifier interface {
+	Verify(ctx context.Context, provider, idToken string) (*ProviderClaims, error)
+}
 
 type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*Session, error)
 	Login(ctx context.Context, req LoginRequest) (*Session, error)
 	RequestEmailCode(ctx context.Context, addr string) error
 	VerifyEmailCode(ctx context.Context, req VerifyEmailRequest) (*Session, error)
+	SocialLogin(ctx context.Context, req SocialLoginRequest) (*Session, error)
 	Me(ctx context.Context, userID string) (*User, error)
 	UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error)
 	Logout(ctx context.Context, sessionID string) error
@@ -42,13 +50,14 @@ type Service interface {
 }
 
 type service struct {
-	repo   Repository
-	cfg    config.AuthConfig
-	sender email.Sender
+	repo     Repository
+	cfg      config.AuthConfig
+	sender   email.Sender
+	verifier TokenVerifier
 }
 
-func NewService(repo Repository, cfg config.AuthConfig, sender email.Sender) Service {
-	return &service{repo: repo, cfg: cfg, sender: sender}
+func NewService(repo Repository, cfg config.AuthConfig, sender email.Sender, verifier TokenVerifier) Service {
+	return &service{repo: repo, cfg: cfg, sender: sender, verifier: verifier}
 }
 
 func (s *service) Register(ctx context.Context, req RegisterRequest) (*Session, error) {
@@ -153,6 +162,66 @@ func (s *service) VerifyEmailCode(ctx context.Context, req VerifyEmailRequest) (
 	}
 
 	return s.createSession(ctx, user.ID, req.UserAgent, req.IPAddress)
+}
+
+// SocialLogin verifies a provider ID token and issues a session. Resolution
+// order: (1) a known identity for that provider+subject logs its user in;
+// (2) otherwise, if the provider asserts a verified email that matches an
+// existing user, the new identity is linked to that user; (3) otherwise a new
+// verified user is created. Steps 2-3 also record the identity for next time.
+func (s *service) SocialLogin(ctx context.Context, req SocialLoginRequest) (*Session, error) {
+	claims, err := s.verifier.Verify(ctx, req.Provider, req.IDToken)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+	if claims.Subject == "" {
+		return nil, ErrInvalidToken
+	}
+
+	userID, err := s.repo.FindUserIDByProviderSubject(ctx, req.Provider, claims.Subject)
+	if err != nil && !isNotFound(err) {
+		return nil, fmt.Errorf("auth: find identity: %w", err)
+	}
+
+	if userID == "" {
+		userID, err = s.resolveUserForNewIdentity(ctx, claims)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.repo.CreateIdentity(ctx, userID, req.Provider, claims.Subject); err != nil {
+			return nil, fmt.Errorf("auth: create identity: %w", err)
+		}
+	}
+
+	return s.createSession(ctx, userID, req.UserAgent, req.IPAddress)
+}
+
+// resolveUserForNewIdentity links a first-time identity to an existing user
+// when the provider asserts a verified matching email, otherwise creates one.
+func (s *service) resolveUserForNewIdentity(ctx context.Context, claims *ProviderClaims) (string, error) {
+	if claims.EmailVerified && claims.Email != "" {
+		user, err := s.repo.FindUserByEmail(ctx, claims.Email)
+		if err == nil {
+			return user.ID, nil
+		}
+		if !isNotFound(err) {
+			return "", fmt.Errorf("auth: find user by email: %w", err)
+		}
+	}
+
+	if claims.Email == "" {
+		// No email to key a new account on (e.g. a hidden Apple relay that was
+		// not shared). Nothing to link or create against.
+		return "", ErrInvalidToken
+	}
+	user, err := s.repo.CreateUser(ctx, claims.Email, "")
+	if err != nil {
+		return "", fmt.Errorf("auth: create user: %w", err)
+	}
+	if err := s.repo.MarkUserVerified(ctx, claims.Email); err != nil {
+		return "", fmt.Errorf("auth: mark verified: %w", err)
+	}
+	return user.ID, nil
 }
 
 func (s *service) Me(ctx context.Context, userID string) (*User, error) {

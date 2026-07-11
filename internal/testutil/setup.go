@@ -62,7 +62,7 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 	}
 
 	cfg := buildConfig()
-	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{})
+	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{}, FakeVerifier{})
 	taskModule := task.NewModule(db)
 	userMetricsModule := usermetrics.NewModule(db)
 	levelingModule := leveling.NewModule(db)
@@ -92,7 +92,7 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 // Truncate removes all rows from application tables, giving each test a clean
 // state without re-running migrations.
 func Truncate(db *sql.DB) error {
-	_, err := db.Exec(`TRUNCATE TABLE task_completions, tasks, exercise_sets, workout_sessions, workout_exercises, workouts, exercises, email_verifications, sessions, users CASCADE`)
+	_, err := db.Exec(`TRUNCATE TABLE task_completions, tasks, exercise_sets, workout_sessions, workout_exercises, workouts, exercises, email_verifications, identities, sessions, users CASCADE`)
 	return err
 }
 
