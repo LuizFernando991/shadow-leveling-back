@@ -15,7 +15,7 @@ type Module struct {
 
 func NewModule(db *sql.DB) *Module {
 	workoutRepo := workout.NewRepository(db)
-	workoutSvc := workout.NewService(workoutRepo, nil)
+	workoutSvc := workout.NewService(workoutRepo, nil, nil)
 
 	taskRepo := task.NewRepository(db)
 	taskSvc := task.NewService(taskRepo)

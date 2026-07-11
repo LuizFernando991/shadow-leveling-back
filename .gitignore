@@ -7,6 +7,11 @@ bin/
 .env
 .env.test
 
+# Firebase / GCS service account credentials (never commit)
+service-account.json
+*-service-account.json
+*serviceAccount*.json
+
 # IDE
 .idea/
 .vscode/

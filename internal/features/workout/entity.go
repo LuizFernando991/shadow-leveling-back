@@ -109,6 +109,7 @@ type WorkoutSession struct {
 	WorkoutID string        `json:"workout_id"`
 	Date      time.Time     `json:"date"`
 	Status    SessionStatus `json:"status"`
+	PhotoURL  *string       `json:"photo_url"`
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
 }

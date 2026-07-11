@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
+	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
 )
 
@@ -23,6 +25,7 @@ var (
 	ErrNotFound                  = errors.New("not found")
 	ErrForbidden                 = errors.New("forbidden")
 	ErrInvalidCursor             = errors.New("invalid cursor")
+	ErrUnsupportedImage          = errors.New("unsupported image type")
 	ErrWorkoutExerciseLimit      = errors.New("workout exercise limit reached")
 	ErrInvalidExerciseReordering = errors.New("invalid exercise reordering")
 )
@@ -50,6 +53,7 @@ type Service interface {
 	GetSession(ctx context.Context, id, userID string) (*WorkoutSessionDetail, error)
 	ListSessions(ctx context.Context, userID string, workoutID *string, from, to *time.Time) ([]WorkoutSession, error)
 	UpdateSession(ctx context.Context, id, userID string, req UpdateWorkoutSessionRequest) (*WorkoutSession, error)
+	AttachSessionPhoto(ctx context.Context, id, userID, contentType string, r io.Reader) (*WorkoutSession, error)
 
 	RecordSet(ctx context.Context, sessionID, userID string, req RecordSetRequest) (*ExerciseSet, error)
 	UpdateSet(ctx context.Context, setID, sessionID, userID string, req UpdateSetRequest) (*ExerciseSet, error)
@@ -60,12 +64,13 @@ type Service interface {
 }
 
 type service struct {
-	repo Repository
-	xp   XPAwarder
+	repo     Repository
+	xp       XPAwarder
+	uploader storage.Uploader
 }
 
-func NewService(repo Repository, xp XPAwarder) Service {
-	return &service{repo: repo, xp: xp}
+func NewService(repo Repository, xp XPAwarder, uploader storage.Uploader) Service {
+	return &service{repo: repo, xp: xp, uploader: uploader}
 }
 
 func isNotFound(err error) bool {
@@ -460,6 +465,25 @@ func (s *service) ownsSession(ctx context.Context, sessionID, userID string) err
 		return fmt.Errorf("workout: get session: %w", err)
 	}
 	return s.ownsWorkout(ctx, sess.WorkoutID, userID)
+}
+
+// AttachSessionPhoto uploads an optional photo for a session the user owns and
+// stores its URL. The photo is never required to log or complete a workout.
+func (s *service) AttachSessionPhoto(ctx context.Context, id, userID, contentType string, r io.Reader) (*WorkoutSession, error) {
+	if err := s.ownsSession(ctx, id, userID); err != nil {
+		return nil, err
+	}
+	ext, ok := storage.ExtForContentType(contentType)
+	if !ok {
+		return nil, ErrUnsupportedImage
+	}
+	// Per-user folder so any future user photo route just adds another
+	// subfolder under <userID>/. Group covers stay flat (not user-owned).
+	url, err := s.uploader.Upload(ctx, userID+"/workout-photos/"+id+ext, contentType, r)
+	if err != nil {
+		return nil, fmt.Errorf("workout: upload photo: %w", err)
+	}
+	return s.repo.SetSessionPhoto(ctx, id, url)
 }
 
 func (s *service) RecordSet(ctx context.Context, sessionID, userID string, req RecordSetRequest) (*ExerciseSet, error) {

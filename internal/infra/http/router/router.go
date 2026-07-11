@@ -5,6 +5,7 @@ import (
 
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
+	"github.com/LuizFernando991/gym-api/internal/features/group"
 	"github.com/LuizFernando991/gym-api/internal/features/leveling"
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
@@ -21,6 +22,7 @@ type Modules struct {
 	UserMetrics *usermetrics.Module
 	Workout     *workout.Module
 	Leveling    *leveling.Module
+	Group       *group.Module
 }
 
 func NewRouter(cfg *config.Config, modules Modules) http.Handler {
@@ -56,6 +58,7 @@ func registerRoutes(r *mux.Router, cfg *config.Config, modules Modules) {
 	modules.UserMetrics.RegisterRoutes(r, modules.Auth.Middleware())
 	modules.Workout.RegisterRoutes(r, modules.Auth.Middleware())
 	modules.Leveling.RegisterRoutes(r, modules.Auth.Middleware())
+	modules.Group.RegisterRoutes(r, modules.Auth.Middleware())
 	docs.RegisterRoutes(r)
 }
 

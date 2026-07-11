@@ -41,12 +41,25 @@ type RedisConfig struct {
 	DB       int
 }
 
+// StorageConfig configures image uploads (Firebase Storage / GCS bucket).
+// When Bucket is empty the app falls back to a noop uploader (local dev/tests).
+// Credentials come from the individual service-account fields (preferred for
+// prod, passed as secrets) or, as a dev convenience, SAJSONPath (a file on disk).
+type StorageConfig struct {
+	Bucket      string
+	ProjectID   string
+	ClientEmail string
+	PrivateKey  string
+	SAJSONPath  string
+}
+
 type Config struct {
-	App   AppConfig
-	DB    DBConfig
-	Auth  AuthConfig
-	Email EmailConfig
-	// Redis RedisConfig
+	App     AppConfig
+	DB      DBConfig
+	Auth    AuthConfig
+	Email   EmailConfig
+	Storage StorageConfig
+	Redis   RedisConfig
 }
 
 func Load() *Config {
@@ -77,11 +90,18 @@ func Load() *Config {
 			ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 			FromAddress:  os.Getenv("EMAIL_FROM"),
 		},
-		// Redis: RedisConfig{
-		// 	Addr:     mustGetEnv("REDIS_ADDR"),
-		// 	Password: os.Getenv("REDIS_PASSWORD"),
-		// 	DB:       0,
-		// },
+		Storage: StorageConfig{
+			Bucket:      os.Getenv("STORAGE_BUCKET"),
+			ProjectID:   os.Getenv("STORAGE_PROJECT_ID"),
+			ClientEmail: os.Getenv("STORAGE_CLIENT_EMAIL"),
+			PrivateKey:  os.Getenv("STORAGE_PRIVATE_KEY"),
+			SAJSONPath:  os.Getenv("STORAGE_SA_JSON_PATH"),
+		},
+		Redis: RedisConfig{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       0,
+		},
 	}
 }
 

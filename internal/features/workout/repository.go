@@ -30,6 +30,7 @@ type Repository interface {
 
 	CreateWorkoutSession(ctx context.Context, workoutID string, date time.Time, status SessionStatus) (*WorkoutSession, error)
 	GetWorkoutSession(ctx context.Context, id string) (*WorkoutSession, error)
+	SetSessionPhoto(ctx context.Context, id, photoURL string) (*WorkoutSession, error)
 	GetWorkoutSessionDetail(ctx context.Context, id string) (*WorkoutSessionDetail, error)
 	ListWorkoutSessions(ctx context.Context, userID string, workoutID *string, from, to *time.Time) ([]WorkoutSession, error)
 	UpdateWorkoutSession(ctx context.Context, id string, status SessionStatus) (*WorkoutSession, error)
@@ -439,9 +440,9 @@ func (r *postgresRepository) CreateWorkoutSession(ctx context.Context, workoutID
 	err := r.db.QueryRowContext(ctx,
 		`INSERT INTO workout_sessions (workout_id, date, status)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, workout_id, date, status, created_at, updated_at`,
+		 RETURNING id, workout_id, date, status, photo_url, created_at, updated_at`,
 		workoutID, date, string(status),
-	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.PhotoURL, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("workout: create session: %w", err)
 	}
@@ -451,10 +452,10 @@ func (r *postgresRepository) CreateWorkoutSession(ctx context.Context, workoutID
 func (r *postgresRepository) GetWorkoutSession(ctx context.Context, id string) (*WorkoutSession, error) {
 	var s WorkoutSession
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, workout_id, date, status, created_at, updated_at
+		`SELECT id, workout_id, date, status, photo_url, created_at, updated_at
 		 FROM workout_sessions WHERE id = $1`,
 		id,
-	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.PhotoURL, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("workout: get session: %w", err)
 	}
@@ -495,7 +496,7 @@ func (r *postgresRepository) GetWorkoutSessionDetail(ctx context.Context, id str
 
 func (r *postgresRepository) ListWorkoutSessions(ctx context.Context, userID string, workoutID *string, from, to *time.Time) ([]WorkoutSession, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT ws.id, ws.workout_id, ws.date, ws.status, ws.created_at, ws.updated_at
+		`SELECT ws.id, ws.workout_id, ws.date, ws.status, ws.photo_url, ws.created_at, ws.updated_at
 		 FROM workout_sessions ws
 		 JOIN workouts w ON w.id = ws.workout_id
 		 WHERE w.user_id = $1
@@ -513,7 +514,7 @@ func (r *postgresRepository) ListWorkoutSessions(ctx context.Context, userID str
 	var sessions []WorkoutSession
 	for rows.Next() {
 		var s WorkoutSession
-		if err := rows.Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.PhotoURL, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("workout: scan session: %w", err)
 		}
 		sessions = append(sessions, s)
@@ -527,11 +528,26 @@ func (r *postgresRepository) UpdateWorkoutSession(ctx context.Context, id string
 		`UPDATE workout_sessions
 		 SET status = $1, updated_at = NOW()
 		 WHERE id = $2
-		 RETURNING id, workout_id, date, status, created_at, updated_at`,
+		 RETURNING id, workout_id, date, status, photo_url, created_at, updated_at`,
 		string(status), id,
-	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.PhotoURL, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("workout: update session: %w", err)
+	}
+	return &s, nil
+}
+
+func (r *postgresRepository) SetSessionPhoto(ctx context.Context, id, photoURL string) (*WorkoutSession, error) {
+	var s WorkoutSession
+	err := r.db.QueryRowContext(ctx,
+		`UPDATE workout_sessions
+		 SET photo_url = $1, updated_at = NOW()
+		 WHERE id = $2
+		 RETURNING id, workout_id, date, status, photo_url, created_at, updated_at`,
+		photoURL, id,
+	).Scan(&s.ID, &s.WorkoutID, &s.Date, &s.Status, &s.PhotoURL, &s.CreatedAt, &s.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("workout: set session photo: %w", err)
 	}
 	return &s, nil
 }

@@ -21,6 +21,8 @@ um resumo do que já está **pronto e funcional** para o Flutter consumir:
 | **Sessões Perdidas**  | Listagem de treinos não realizados                                                            |
 | **Métricas do Dia**   | Dashboard com missões do dia (tarefas + treinos, todos os dias da semana)                     |
 | **Nivelamento**       | XP, níveis, ranks (E→S) e streak por conclusão de treino                                      |
+| **Grupos**            | Grupos por código de convite, ranking semanal (1 ponto/dia), feed com foto, capa opcional     |
+| **Foto de Treino**    | Foto opcional (multipart) anexada à sessão, exibida no feed dos grupos                         |
 
 ---
 
@@ -831,6 +833,18 @@ PUT /workout-sessions/{id}
 
 ---
 
+## 5.4b Anexar Foto à Sessão (opcional)
+
+```
+POST /workout-sessions/{id}/photo
+```
+
+**multipart/form-data** com o campo `image` (jpeg/png, máx 5MB). A foto é **opcional** e nunca é exigida para registrar/concluir um treino. Retorna a `WorkoutSession` com `photo_url` preenchido. A foto aparece no feed de todos os grupos do usuário.
+
+> Todas as respostas de sessão agora incluem `photo_url` (`null` quando não há foto).
+
+---
+
 ## 5.5 Listar Treinos Perdidos
 
 ```
@@ -1089,7 +1103,137 @@ XP necessário para atingir o nível N = 100 × (N - 1)²
 
 ---
 
-# MÓDULO 8 — Utilitários
+# MÓDULO 8 — Grupos (`/groups`)
+
+> Rotas **privadas**. Grupos sociais estilo GymRats: ranking semanal e feed de treinos.
+>
+> **Pontuação:** 1 ponto por **dia** com pelo menos um treino `complete` (máx 7/semana, independente de nível). A semana vai de **segunda a domingo** no fuso `America/Sao_Paulo`.
+>
+> Um treino registrado conta e aparece no feed de **todos** os grupos do usuário — automático, sem escolher grupo.
+
+## 8.1 Criar Grupo
+
+```
+POST /groups
+```
+
+| Campo  | Tipo   | Obrigatório | Valores     |
+| ------ | ------ | ----------- | ----------- |
+| `name` | string | sim         | 1–100 chars |
+
+O criador vira `owner` e primeiro membro; a resposta traz um `invite_code` único.
+
+```json
+{
+  "id": "uuid",
+  "name": "Hunters",
+  "cover_url": null,
+  "invite_code": "K7M2PQ",
+  "owner_id": "uuid",
+  "created_at": "2026-07-10T12:00:00Z"
+}
+```
+
+## 8.2 Entrar em Grupo por Código
+
+```
+POST /groups/join
+```
+
+| Campo         | Tipo   | Obrigatório |
+| ------------- | ------ | ----------- |
+| `invite_code` | string | sim         |
+
+`200 OK` com o grupo. `404` se o código não existe; `409` se já é membro.
+
+## 8.3 Listar Meus Grupos
+
+```
+GET /groups
+```
+
+Retorna um array de grupos dos quais o usuário participa.
+
+## 8.4 Detalhe do Grupo (header)
+
+```
+GET /groups/{id}
+```
+
+Somente para membros (`403` caso contrário). Traz o cabeçalho da página do grupo:
+
+```json
+{
+  "id": "uuid",
+  "name": "Hunters",
+  "cover_url": null,
+  "invite_code": "K7M2PQ",
+  "owner_id": "uuid",
+  "created_at": "2026-07-10T12:00:00Z",
+  "top_score": 5,
+  "my_score": 3,
+  "member_count": 4
+}
+```
+
+## 8.5 Ranking Semanal
+
+```
+GET /groups/{id}/ranking
+```
+
+Membros ordenados por pontos da semana (desc). `name` = nickname (ou email).
+
+```json
+[
+  { "user_id": "uuid", "name": "Sung", "points": 5 },
+  { "user_id": "uuid", "name": "Cha",  "points": 3 }
+]
+```
+
+## 8.6 Feed do Grupo
+
+```
+GET /groups/{id}/feed?cursor=&limit=
+```
+
+Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (limit 1–100, padrão 20). O `created_at` é o horário do registro; o front agrupa por dia (Today/Yesterday). `photo_url` pode ser `null` (usar placeholder).
+
+```json
+{
+  "data": [
+    {
+      "session_id": "uuid",
+      "user_id": "uuid",
+      "name": "Sung",
+      "workout_name": "Leg day",
+      "photo_url": "https://.../photo.jpg",
+      "created_at": "2026-07-10T12:00:00Z"
+    }
+  ],
+  "cursor": { "next_cursor": "base64", "has_more": true }
+}
+```
+
+## 8.7 Definir Capa do Grupo (owner)
+
+```
+PATCH /groups/{id}/cover
+```
+
+**multipart/form-data** com o campo `image` (jpeg/png, máx 5MB). Apenas o `owner` (`403` caso contrário). Retorna o grupo com `cover_url` preenchido.
+
+## 8.8 Sair do Grupo
+
+```
+DELETE /groups/{id}/leave
+```
+
+`204 No Content`.
+
+---
+
+# MÓDULO 9 — Utilitários
 
 ---
 
@@ -1160,10 +1304,19 @@ Retorna a especificação OpenAPI 3.0 em YAML.
 | `PUT`    | `/workout-sessions/{id}`              | sim  | Atualizar status da sessão     |
 | `GET`    | `/workout-sessions/missed`            | sim  | Treinos perdidos               |
 | `POST`   | `/workout-sessions/{id}/sets`         | sim  | Registrar set                  |
+| `POST`   | `/workout-sessions/{id}/photo`        | sim  | Anexar foto (multipart)        |
 | `PUT`    | `/workout-sessions/{id}/sets/{setId}` | sim  | Atualizar set                  |
 | `DELETE` | `/workout-sessions/{id}/sets/{setId}` | sim  | Deletar set                    |
 | `GET`    | `/user-metrics/today`                 | sim  | Dashboard do dia               |
 | `GET`    | `/me/level`                           | sim  | XP, nível, rank e streak       |
+| `POST`   | `/groups`                             | sim  | Criar grupo                    |
+| `GET`    | `/groups`                             | sim  | Listar meus grupos             |
+| `POST`   | `/groups/join`                        | sim  | Entrar por código              |
+| `GET`    | `/groups/{id}`                        | sim  | Detalhe (header + scores)      |
+| `GET`    | `/groups/{id}/ranking`                | sim  | Ranking semanal                |
+| `GET`    | `/groups/{id}/feed`                   | sim  | Feed do grupo (cursor)         |
+| `PATCH`  | `/groups/{id}/cover`                  | sim  | Definir capa (multipart, owner)|
+| `DELETE` | `/groups/{id}/leave`                  | sim  | Sair do grupo                  |
 | `GET`    | `/health`                             | —    | Status da API                  |
 
 ---

@@ -12,12 +12,19 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Upload rate limit: per-user cap to protect storage bandwidth/cost.
+const (
+	uploadRateLimit  = 10
+	uploadRateWindow = time.Minute
+)
+
 type Handler struct {
 	svc Service
+	rl  httputil.RateAllower
 }
 
-func NewHandler(svc Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc Service, rl httputil.RateAllower) *Handler {
+	return &Handler{svc: svc, rl: rl}
 }
 
 func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler) http.Handler) {
@@ -45,6 +52,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	api.HandleFunc("/workout-sessions", h.createSession).Methods(http.MethodPost)
 	api.HandleFunc("/workout-sessions/{id}", h.getSession).Methods(http.MethodGet)
 	api.HandleFunc("/workout-sessions/{id}", h.updateSession).Methods(http.MethodPut)
+	api.HandleFunc("/workout-sessions/{id}/photo", h.attachSessionPhoto).Methods(http.MethodPost)
 	api.HandleFunc("/workout-sessions/{id}/sets", h.recordSet).Methods(http.MethodPost)
 	api.HandleFunc("/workout-sessions/{id}/sets/{setId}", h.updateSet).Methods(http.MethodPut)
 	api.HandleFunc("/workout-sessions/{id}/sets/{setId}", h.deleteSet).Methods(http.MethodDelete)
@@ -462,6 +470,41 @@ func (h *Handler) updateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if errors.Is(err, ErrForbidden) {
 		httputil.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, sess)
+}
+
+const maxPhotoBytes = 5 << 20 // 5 MiB
+
+func (h *Handler) attachSessionPhoto(w http.ResponseWriter, r *http.Request) {
+	if !httputil.EnforceUserRateLimit(w, r, h.rl, "upload", uploadRateLimit, uploadRateWindow) {
+		return
+	}
+	userID := httputil.SessionFromContext(r.Context()).UserID
+	id := mux.Vars(r)["id"]
+
+	file, contentType, ok := httputil.ReadImageUpload(w, r, maxPhotoBytes)
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	sess, err := h.svc.AttachSessionPhoto(r.Context(), id, userID, contentType, file)
+	if errors.Is(err, ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		httputil.Error(w, http.StatusForbidden, "access denied")
+		return
+	}
+	if errors.Is(err, ErrUnsupportedImage) {
+		httputil.Error(w, http.StatusBadRequest, "unsupported image type (use jpeg or png)")
 		return
 	}
 	if err != nil {

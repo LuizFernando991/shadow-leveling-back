@@ -1,4 +1,4 @@
-package workout
+package group
 
 import (
 	"database/sql"
@@ -13,9 +13,9 @@ type Module struct {
 	handler *Handler
 }
 
-func NewModule(db *sql.DB, xp XPAwarder, uploader storage.Uploader, rl httputil.RateAllower) *Module {
+func NewModule(db *sql.DB, uploader storage.Uploader, rl httputil.RateAllower) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo, xp, uploader)
+	svc := NewService(repo, uploader)
 	return &Module{handler: NewHandler(svc, rl)}
 }
 
