@@ -32,8 +32,6 @@ func NewHandler(svc Service, limiter httputil.RateAllower) *Handler {
 
 func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler) http.Handler) {
 	public := r.PathPrefix("/auth").Subrouter()
-	public.HandleFunc("/register", h.register).Methods(http.MethodPost)
-	public.HandleFunc("/login", h.login).Methods(http.MethodPost)
 	public.HandleFunc("/email/request", h.requestEmailCode).Methods(http.MethodPost)
 	public.HandleFunc("/email/verify", h.verifyEmailCode).Methods(http.MethodPost)
 	public.HandleFunc("/social", h.socialLogin).Methods(http.MethodPost)
@@ -45,58 +43,6 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	private.HandleFunc("/logout", h.logout).Methods(http.MethodPost)
 	private.HandleFunc("/sessions", h.listSessions).Methods(http.MethodGet)
 	private.HandleFunc("/sessions/{id}", h.revokeSession).Methods(http.MethodDelete)
-}
-
-func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
-	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	req.IPAddress = clientIP(r)
-	req.UserAgent = r.UserAgent()
-
-	session, err := h.svc.Register(r.Context(), req)
-	if errors.Is(err, ErrEmailTaken) {
-		httputil.Error(w, http.StatusConflict, "email already in use")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusCreated, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
-}
-
-func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if err := validate.Struct(req); err != nil {
-		httputil.Error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	req.IPAddress = clientIP(r)
-	req.UserAgent = r.UserAgent()
-
-	session, err := h.svc.Login(r.Context(), req)
-	if errors.Is(err, ErrInvalidCredentials) {
-		httputil.Error(w, http.StatusUnauthorized, "invalid email or password")
-		return
-	}
-	if err != nil {
-		httputil.Error(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	httputil.JSON(w, http.StatusOK, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
 }
 
 func (h *Handler) requestEmailCode(w http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,6 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // codeTTL is how long an email verification code stays valid. Matches the
@@ -21,12 +20,10 @@ import (
 const codeTTL = 15 * time.Minute
 
 var (
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrEmailTaken         = errors.New("email already in use")
-	ErrSessionNotFound    = errors.New("session not found")
-	ErrUnauthorized       = errors.New("unauthorized")
-	ErrInvalidCode        = errors.New("invalid or expired code")
-	ErrInvalidToken       = errors.New("invalid provider token")
+	ErrSessionNotFound = errors.New("session not found")
+	ErrUnauthorized    = errors.New("unauthorized")
+	ErrInvalidCode     = errors.New("invalid or expired code")
+	ErrInvalidToken    = errors.New("invalid provider token")
 )
 
 // TokenVerifier verifies a social provider's ID token and returns the identity
@@ -36,8 +33,6 @@ type TokenVerifier interface {
 }
 
 type Service interface {
-	Register(ctx context.Context, req RegisterRequest) (*Session, error)
-	Login(ctx context.Context, req LoginRequest) (*Session, error)
 	RequestEmailCode(ctx context.Context, addr string) error
 	VerifyEmailCode(ctx context.Context, req VerifyEmailRequest) (*Session, error)
 	SocialLogin(ctx context.Context, req SocialLoginRequest) (*Session, error)
@@ -58,48 +53,6 @@ type service struct {
 
 func NewService(repo Repository, cfg config.AuthConfig, sender email.Sender, verifier TokenVerifier) Service {
 	return &service{repo: repo, cfg: cfg, sender: sender, verifier: verifier}
-}
-
-func (s *service) Register(ctx context.Context, req RegisterRequest) (*Session, error) {
-	_, err := s.repo.FindUserByEmail(ctx, req.Email)
-	if err == nil {
-		return nil, ErrEmailTaken
-	}
-	if !isNotFound(err) {
-		return nil, fmt.Errorf("auth: register: %w", err)
-	}
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("auth: hash password: %w", err)
-	}
-
-	user, err := s.repo.CreateUser(ctx, req.Email, string(hash))
-	if err != nil {
-		return nil, fmt.Errorf("auth: create user: %w", err)
-	}
-
-	if err := s.repo.MarkUserVerified(ctx, req.Email); err != nil {
-		return nil, fmt.Errorf("auth: mark verified: %w", err)
-	}
-
-	return s.createSession(ctx, user.ID, req.UserAgent, req.IPAddress)
-}
-
-func (s *service) Login(ctx context.Context, req LoginRequest) (*Session, error) {
-	user, err := s.repo.FindUserByEmail(ctx, req.Email)
-	if err != nil {
-		if isNotFound(err) {
-			return nil, ErrInvalidCredentials
-		}
-		return nil, fmt.Errorf("auth: login: %w", err)
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		return nil, ErrInvalidCredentials
-	}
-
-	return s.createSession(ctx, user.ID, req.UserAgent, req.IPAddress)
 }
 
 // RequestEmailCode generates a fresh 6-digit code for addr, replacing any
@@ -148,7 +101,7 @@ func (s *service) VerifyEmailCode(ctx context.Context, req VerifyEmailRequest) (
 		if !isNotFound(err) {
 			return nil, fmt.Errorf("auth: verify code: %w", err)
 		}
-		user, err = s.repo.CreateUser(ctx, req.Email, "")
+		user, err = s.repo.CreateUser(ctx, req.Email)
 		if err != nil {
 			return nil, fmt.Errorf("auth: create user: %w", err)
 		}
@@ -214,7 +167,7 @@ func (s *service) resolveUserForNewIdentity(ctx context.Context, claims *Provide
 		// not shared). Nothing to link or create against.
 		return "", ErrInvalidToken
 	}
-	user, err := s.repo.CreateUser(ctx, claims.Email, "")
+	user, err := s.repo.CreateUser(ctx, claims.Email)
 	if err != nil {
 		return "", fmt.Errorf("auth: create user: %w", err)
 	}
@@ -307,7 +260,6 @@ func generateCode() (string, error) {
 	}
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
-
 
 func isNotFound(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)

@@ -3,13 +3,12 @@ package auth
 import "time"
 
 type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	Nickname     *string
-	VerifiedAt   *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID         string
+	Email      string
+	Nickname   *string
+	VerifiedAt *time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type Session struct {
