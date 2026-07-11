@@ -15,6 +15,7 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
 	"github.com/LuizFernando991/gym-api/internal/infra/cache"
+	"github.com/LuizFernando991/gym-api/internal/infra/email"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/server"
 	"github.com/LuizFernando991/gym-api/internal/infra/push"
@@ -41,12 +42,13 @@ func main() {
 	uploader := buildUploader(cfg.Storage)
 	rateLimiter := buildRateLimiter(cfg.Redis)
 	pushSender := push.NewExpoSender(cfg.Push.ExpoAccessToken)
+	emailSender := buildEmailSender(cfg.Email)
 
 	levelingModule := leveling.NewModule(db)
 	notificationModule := notification.NewModule(db, pushSender)
 
 	modules := router.Modules{
-		Auth:         auth.NewModule(db, cfg.Auth),
+		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter),
 		Task:         task.NewModule(db),
 		UserMetrics:  usermetrics.NewModule(db),
 		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),
@@ -113,4 +115,15 @@ func buildRateLimiter(cfg config.RedisConfig) httputil.RateAllower {
 		return cache.NoopRateLimiter{}
 	}
 	return cache.NewRedisRateLimiter(client)
+}
+
+// buildEmailSender returns the Resend-backed sender when an API key is set,
+// otherwise a dev sender that logs codes to stdout (local dev without a
+// provider).
+func buildEmailSender(cfg config.EmailConfig) email.Sender {
+	if cfg.ResendAPIKey == "" {
+		slog.Warn("email: no RESEND_API_KEY configured, codes are logged to stdout")
+		return email.NewDevSender()
+	}
+	return email.NewResendSender(cfg.ResendAPIKey, cfg.FromAddress)
 }

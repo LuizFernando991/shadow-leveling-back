@@ -28,6 +28,32 @@ func reqWithUser(userID string) *http.Request {
 	return r
 }
 
+func TestEnforceRateLimit(t *testing.T) {
+	cases := []struct {
+		name     string
+		limiter  stubLimiter
+		wantPass bool
+		wantCode int
+	}{
+		{"within limit", stubLimiter{allow: true}, true, 200},
+		{"over limit", stubLimiter{allow: false}, false, http.StatusTooManyRequests},
+		{"limiter error fails open", stubLimiter{err: context.DeadlineExceeded}, true, 200},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/x", nil)
+			got := EnforceRateLimit(w, r, c.limiter, "email-code:a@b.com", 1, time.Minute)
+			if got != c.wantPass {
+				t.Errorf("pass = %v, want %v", got, c.wantPass)
+			}
+			if !c.wantPass && w.Code != c.wantCode {
+				t.Errorf("code = %d, want %d", w.Code, c.wantCode)
+			}
+		})
+	}
+}
+
 func TestEnforceUserRateLimit(t *testing.T) {
 	cases := []struct {
 		name     string

@@ -16,6 +16,10 @@ type LoginRequest struct {
 	UserAgent string `json:"-"`
 }
 
+type EmailCodeRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
 type VerifyEmailRequest struct {
 	Email     string `json:"email" validate:"required,email"`
 	Code      string `json:"code"  validate:"required,len=6,numeric"`
