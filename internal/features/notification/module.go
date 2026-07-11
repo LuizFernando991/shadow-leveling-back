@@ -1,0 +1,37 @@
+package notification
+
+import (
+	"context"
+	"database/sql"
+	"net/http"
+	"time"
+
+	"github.com/LuizFernando991/gym-api/internal/infra/push"
+	"github.com/gorilla/mux"
+)
+
+// Notifier is the interface workout uses to trigger a "someone trained" push
+// without importing this package directly (mirrors leveling.Awarder).
+type Notifier interface {
+	NotifyWorkoutCompleted(ctx context.Context, userID string, sessionDate time.Time)
+}
+
+type Module struct {
+	handler *Handler
+	svc     Service
+}
+
+func NewModule(db *sql.DB, sender push.Sender) *Module {
+	repo := NewRepository(db)
+	svc := NewService(repo, sender)
+	return &Module{handler: NewHandler(svc), svc: svc}
+}
+
+func (m *Module) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler) http.Handler) {
+	m.handler.RegisterRoutes(r, authMiddleware)
+}
+
+// Notifier returns the workout-facing notifier backed by this module's service.
+func (m *Module) Notifier() Notifier {
+	return m.svc
+}

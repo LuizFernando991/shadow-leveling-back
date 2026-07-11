@@ -21,6 +21,12 @@ type XPAwarder interface {
 	AwardWorkoutCompletion(ctx context.Context, userID, sessionID string, sessionDate time.Time) error
 }
 
+// GroupNotifier is satisfied by the notification module. Called fire-and-forget
+// on workout completion so group members can be notified.
+type GroupNotifier interface {
+	NotifyWorkoutCompleted(ctx context.Context, userID string, sessionDate time.Time)
+}
+
 var (
 	ErrNotFound                  = errors.New("not found")
 	ErrForbidden                 = errors.New("forbidden")
@@ -67,10 +73,11 @@ type service struct {
 	repo     Repository
 	xp       XPAwarder
 	uploader storage.Uploader
+	notifier GroupNotifier
 }
 
-func NewService(repo Repository, xp XPAwarder, uploader storage.Uploader) Service {
-	return &service{repo: repo, xp: xp, uploader: uploader}
+func NewService(repo Repository, xp XPAwarder, uploader storage.Uploader, notifier GroupNotifier) Service {
+	return &service{repo: repo, xp: xp, uploader: uploader, notifier: notifier}
 }
 
 func isNotFound(err error) bool {
@@ -394,12 +401,25 @@ func (s *service) CreateSession(ctx context.Context, userID string, req CreateWo
 	if err != nil {
 		return nil, fmt.Errorf("workout: create session: %w", err)
 	}
-	if sess.Status == StatusComplete && s.xp != nil {
-		if err := s.xp.AwardWorkoutCompletion(ctx, userID, sess.ID, sess.Date); err != nil {
-			slog.Error("leveling: award xp on session create", "error", err, "session_id", sess.ID)
-		}
+	if sess.Status == StatusComplete {
+		s.onCompletion(ctx, userID, sess.ID, sess.Date)
 	}
 	return sess, nil
+}
+
+// onCompletion runs the side effects of a workout being completed: award XP and
+// notify group members. Both are best-effort and never fail the request.
+func (s *service) onCompletion(ctx context.Context, userID, sessionID string, date time.Time) {
+	if s.xp != nil {
+		if err := s.xp.AwardWorkoutCompletion(ctx, userID, sessionID, date); err != nil {
+			slog.Error("leveling: award xp on completion", "error", err, "session_id", sessionID)
+		}
+	}
+	if s.notifier != nil {
+		// Fire-and-forget with a detached context so the push (network call) does
+		// not block the HTTP response, which cancels the request context.
+		go s.notifier.NotifyWorkoutCompleted(context.Background(), userID, date)
+	}
 }
 
 func (s *service) GetSession(ctx context.Context, id, userID string) (*WorkoutSessionDetail, error) {
@@ -446,10 +466,8 @@ func (s *service) UpdateSession(ctx context.Context, id, userID string, req Upda
 	if err != nil {
 		return nil, fmt.Errorf("workout: update session: %w", err)
 	}
-	if updated.Status == StatusComplete && prevStatus != StatusComplete && s.xp != nil {
-		if err := s.xp.AwardWorkoutCompletion(ctx, userID, updated.ID, updated.Date); err != nil {
-			slog.Error("leveling: award xp on session update", "error", err, "session_id", updated.ID)
-		}
+	if updated.Status == StatusComplete && prevStatus != StatusComplete {
+		s.onCompletion(ctx, userID, updated.ID, updated.Date)
 	}
 	return updated, nil
 }

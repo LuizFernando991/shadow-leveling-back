@@ -197,6 +197,32 @@ func TestGroupFlow(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestPushTokenRegistration(t *testing.T) {
+	truncate(t)
+	tok := registerUser(t, "push@example.com", "password123")
+
+	// Register a token.
+	resp := request(t, http.MethodPost, "/me/push-token",
+		map[string]string{"token": "ExponentPushToken[abc123]", "platform": "android"}, tok)
+	assertStatus(t, resp, http.StatusNoContent)
+	resp.Body.Close()
+
+	// Missing token -> 400.
+	resp = request(t, http.MethodPost, "/me/push-token", map[string]string{}, tok)
+	assertStatus(t, resp, http.StatusBadRequest)
+	resp.Body.Close()
+
+	// Delete it.
+	resp = request(t, http.MethodDelete, "/me/push-token",
+		map[string]string{"token": "ExponentPushToken[abc123]"}, tok)
+	assertStatus(t, resp, http.StatusNoContent)
+	resp.Body.Close()
+
+	// Completing a workout with the notifier wired (noop sender) must not break.
+	monday, _ := weekDates(t)
+	createCompletedSession(t, tok, monday)
+}
+
 func TestSessionPhotoAndCover(t *testing.T) {
 	truncate(t)
 	monday, _ := weekDates(t)

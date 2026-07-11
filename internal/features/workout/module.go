@@ -13,9 +13,9 @@ type Module struct {
 	handler *Handler
 }
 
-func NewModule(db *sql.DB, xp XPAwarder, uploader storage.Uploader, rl httputil.RateAllower) *Module {
+func NewModule(db *sql.DB, xp XPAwarder, uploader storage.Uploader, rl httputil.RateAllower, notifier GroupNotifier) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo, xp, uploader)
+	svc := NewService(repo, xp, uploader, notifier)
 	return &Module{handler: NewHandler(svc, rl)}
 }
 

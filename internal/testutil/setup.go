@@ -21,11 +21,13 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
 	"github.com/LuizFernando991/gym-api/internal/features/group"
 	"github.com/LuizFernando991/gym-api/internal/features/leveling"
+	"github.com/LuizFernando991/gym-api/internal/features/notification"
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
 	"github.com/LuizFernando991/gym-api/internal/infra/cache"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
+	"github.com/LuizFernando991/gym-api/internal/infra/push"
 	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 )
 
@@ -65,14 +67,16 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 	levelingModule := leveling.NewModule(db)
 	uploader := storage.NewNoopUploader()
 	rl := cache.NoopRateLimiter{}
-	workoutModule := workout.NewModule(db, levelingModule.Awarder(), uploader, rl)
+	notificationModule := notification.NewModule(db, push.NewNoopSender())
+	workoutModule := workout.NewModule(db, levelingModule.Awarder(), uploader, rl, notificationModule.Notifier())
 	h := router.NewRouter(cfg, router.Modules{
-		Auth:        authModule,
-		Task:        taskModule,
-		UserMetrics: userMetricsModule,
-		Workout:     workoutModule,
-		Leveling:    levelingModule,
-		Group:       group.NewModule(db, uploader, rl),
+		Auth:         authModule,
+		Task:         taskModule,
+		UserMetrics:  userMetricsModule,
+		Workout:      workoutModule,
+		Leveling:     levelingModule,
+		Group:        group.NewModule(db, uploader, rl),
+		Notification: notificationModule,
 	})
 	srv := httptest.NewServer(h)
 

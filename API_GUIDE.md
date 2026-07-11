@@ -1231,6 +1231,29 @@ DELETE /groups/{id}/leave
 
 `204 No Content`.
 
+## 8.9 Push Notifications (tokens)
+
+> Quando um membro registra o **primeiro treino do dia**, os demais membros dos grupos dele recebem um push ("Fulano treinou 💪"). O app registra o token do device aqui.
+
+**Registrar / atualizar token** (`204 No Content`):
+
+```
+POST /me/push-token
+```
+
+| Campo      | Tipo   | Obrigatório | Valores            |
+| ---------- | ------ | ----------- | ------------------ |
+| `token`    | string | sim         | Expo push token    |
+| `platform` | string | não         | `ios`,`android`,`web` |
+
+**Remover token** (no logout, `204 No Content`):
+
+```
+DELETE /me/push-token       body: { "token": "..." }
+```
+
+> Requer **dev/preview build (EAS)** — push remoto não funciona no Expo Go (SDK 53+).
+
 ---
 
 # MÓDULO 9 — Utilitários
@@ -1317,6 +1340,8 @@ Retorna a especificação OpenAPI 3.0 em YAML.
 | `GET`    | `/groups/{id}/feed`                   | sim  | Feed do grupo (cursor)         |
 | `PATCH`  | `/groups/{id}/cover`                  | sim  | Definir capa (multipart, owner)|
 | `DELETE` | `/groups/{id}/leave`                  | sim  | Sair do grupo                  |
+| `POST`   | `/me/push-token`                      | sim  | Registrar token de push        |
+| `DELETE` | `/me/push-token`                      | sim  | Remover token de push          |
 | `GET`    | `/health`                             | —    | Status da API                  |
 
 ---

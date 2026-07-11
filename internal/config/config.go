@@ -41,6 +41,10 @@ type RedisConfig struct {
 	DB       int
 }
 
+type PushConfig struct {
+	ExpoAccessToken string
+}
+
 // StorageConfig configures image uploads (Firebase Storage / GCS bucket).
 // When Bucket is empty the app falls back to a noop uploader (local dev/tests).
 // Credentials come from the individual service-account fields (preferred for
@@ -60,6 +64,7 @@ type Config struct {
 	Email   EmailConfig
 	Storage StorageConfig
 	Redis   RedisConfig
+	Push    PushConfig
 }
 
 func Load() *Config {
@@ -101,6 +106,9 @@ func Load() *Config {
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),
 			DB:       0,
+		},
+		Push: PushConfig{
+			ExpoAccessToken: os.Getenv("EXPO_ACCESS_TOKEN"),
 		},
 	}
 }

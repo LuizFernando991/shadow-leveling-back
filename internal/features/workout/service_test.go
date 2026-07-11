@@ -16,7 +16,7 @@ func TestServiceListExercises(t *testing.T) {
 		repo := &fakeRepository{
 			listExercisesResult: makeExercises(21),
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		page, err := svc.ListExercises(ctx, "", "", 0)
 		if err != nil {
@@ -48,7 +48,7 @@ func TestServiceListExercises(t *testing.T) {
 
 	t.Run("passes decoded cursor to repository", func(t *testing.T) {
 		repo := &fakeRepository{}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 		cursor := encodeExerciseCursor("Bench Press", "exercise-1")
 
 		_, err := svc.ListExercises(ctx, "bench", cursor, 10)
@@ -68,7 +68,7 @@ func TestServiceListExercises(t *testing.T) {
 	})
 
 	t.Run("rejects invalid cursor", func(t *testing.T) {
-		svc := NewService(&fakeRepository{}, nil, nil)
+		svc := NewService(&fakeRepository{}, nil, nil, nil)
 
 		_, err := svc.ListExercises(ctx, "", "not-base64", 10)
 		if !errors.Is(err, ErrInvalidCursor) {
@@ -77,7 +77,7 @@ func TestServiceListExercises(t *testing.T) {
 	})
 
 	t.Run("normalizes nil data to empty slice", func(t *testing.T) {
-		svc := NewService(&fakeRepository{}, nil, nil)
+		svc := NewService(&fakeRepository{}, nil, nil, nil)
 
 		page, err := svc.ListExercises(ctx, "", "", 10)
 		if err != nil {
@@ -96,7 +96,7 @@ func TestServiceWorkoutOwnership(t *testing.T) {
 		repo := &fakeRepository{
 			workout: &Workout{ID: "workout-1", UserID: "owner"},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.GetWorkout(ctx, "workout-1", "intruder")
 		if !errors.Is(err, ErrForbidden) {
@@ -109,7 +109,7 @@ func TestServiceWorkoutOwnership(t *testing.T) {
 
 	t.Run("GetWorkout maps missing workout to ErrNotFound", func(t *testing.T) {
 		repo := &fakeRepository{getWorkoutErr: sql.ErrNoRows}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.GetWorkout(ctx, "missing", "user-1")
 		if !errors.Is(err, ErrNotFound) {
@@ -121,7 +121,7 @@ func TestServiceWorkoutOwnership(t *testing.T) {
 		repo := &fakeRepository{
 			workout: &Workout{ID: "workout-1", UserID: "owner"},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		err := svc.DeleteWorkout(ctx, "workout-1", "intruder")
 		if !errors.Is(err, ErrForbidden) {
@@ -145,7 +145,7 @@ func TestServiceUpdateWorkout(t *testing.T) {
 		Active:      true,
 	}
 	repo := &fakeRepository{workout: existing}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	newName := "Updated"
 	active := false
@@ -179,7 +179,7 @@ func TestServiceWorkoutExercises(t *testing.T) {
 			workout:               &Workout{ID: "workout-1", UserID: "user-1"},
 			countWorkoutExercises: maxWorkoutExercises,
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.AddWorkoutExercise(ctx, "workout-1", "user-1", AddWorkoutExerciseRequest{
 			ExerciseID: "exercise-1",
@@ -212,7 +212,7 @@ func TestServiceWorkoutExercises(t *testing.T) {
 			workout:         &Workout{ID: "workout-1", UserID: "user-1"},
 			workoutExercise: existing,
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 		sets := 5
 
 		got, err := svc.UpdateWorkoutExercise(ctx, "we-1", "workout-1", "user-1", UpdateWorkoutExerciseRequest{
@@ -232,7 +232,7 @@ func TestServiceWorkoutExercises(t *testing.T) {
 			workout:         &Workout{ID: "workout-1", UserID: "user-1"},
 			workoutExercise: &WorkoutExercise{ID: "we-1", WorkoutID: "other-workout"},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.UpdateWorkoutExercise(ctx, "we-1", "workout-1", "user-1", UpdateWorkoutExerciseRequest{})
 		if !errors.Is(err, ErrNotFound) {
@@ -242,7 +242,7 @@ func TestServiceWorkoutExercises(t *testing.T) {
 
 	t.Run("ReorderWorkoutExercises rejects duplicates before repository update", func(t *testing.T) {
 		repo := &fakeRepository{workout: &Workout{ID: "workout-1", UserID: "user-1"}}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		err := svc.ReorderWorkoutExercises(ctx, "workout-1", "user-1", ReorderWorkoutExercisesRequest{
 			Exercises: []ReorderWorkoutExerciseItem{
@@ -264,7 +264,7 @@ func TestServiceSessionsAndSets(t *testing.T) {
 
 	t.Run("CreateSession checks workout ownership", func(t *testing.T) {
 		repo := &fakeRepository{workout: &Workout{ID: "workout-1", UserID: "owner"}}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.CreateSession(ctx, "intruder", CreateWorkoutSessionRequest{
 			WorkoutID: "workout-1",
@@ -284,7 +284,7 @@ func TestServiceSessionsAndSets(t *testing.T) {
 			workout:        &Workout{ID: "workout-1", UserID: "user-1"},
 			workoutSession: &WorkoutSession{ID: "session-1", WorkoutID: "workout-1", Status: StatusIncomplete},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		got, err := svc.UpdateSession(ctx, "session-1", "user-1", UpdateWorkoutSessionRequest{})
 		if err != nil {
@@ -300,7 +300,7 @@ func TestServiceSessionsAndSets(t *testing.T) {
 			workout:        &Workout{ID: "workout-1", UserID: "owner"},
 			workoutSession: &WorkoutSession{ID: "session-1", WorkoutID: "workout-1"},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.RecordSet(ctx, "session-1", "intruder", RecordSetRequest{
 			ExerciseID: "exercise-1",
@@ -323,7 +323,7 @@ func TestServiceSessionsAndSets(t *testing.T) {
 			workoutSession: &WorkoutSession{ID: "session-1", WorkoutID: "workout-1"},
 			exerciseSet:    &ExerciseSet{ID: "set-1", SessionID: "session-1", Reps: &reps, Weight: &weight, Duration: &duration},
 		}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 		newReps := 12
 
 		got, err := svc.UpdateSet(ctx, "set-1", "session-1", "user-1", UpdateSetRequest{Reps: &newReps})
@@ -341,7 +341,7 @@ func TestServiceAnalytics(t *testing.T) {
 
 	t.Run("GetWorkoutProgress checks workout ownership", func(t *testing.T) {
 		repo := &fakeRepository{workout: &Workout{ID: "workout-1", UserID: "owner"}}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		_, err := svc.GetWorkoutProgress(ctx, "workout-1", "intruder", nil)
 		if !errors.Is(err, ErrForbidden) {
@@ -357,7 +357,7 @@ func TestServiceAnalytics(t *testing.T) {
 		to := time.Date(2026, 4, 23, 0, 0, 0, 0, time.UTC)
 		want := []MissedSession{{WorkoutID: "workout-1", WorkoutName: "Push", Date: from}}
 		repo := &fakeRepository{missedSessions: want}
-		svc := NewService(repo, nil, nil)
+		svc := NewService(repo, nil, nil, nil)
 
 		got, err := svc.GetMissedSessions(ctx, "user-1", from, to)
 		if err != nil {

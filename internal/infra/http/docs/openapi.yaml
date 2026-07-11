@@ -11,6 +11,7 @@ tags:
   - name: Workouts
   - name: WorkoutSessions
   - name: Groups
+  - name: Notifications
 
 paths:
   /auth/register:
@@ -1327,6 +1328,44 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /me/push-token:
+    post:
+      tags: [Notifications]
+      summary: Register or update the device push token
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterTokenRequest'
+      responses:
+        '204':
+          description: Token registered
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Notifications]
+      summary: Remove a device push token (on logout)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteTokenRequest'
+      responses:
+        '204':
+          description: Token removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2116,6 +2155,23 @@ components:
             $ref: '#/components/schemas/FeedItem'
         cursor:
           $ref: '#/components/schemas/CursorMeta'
+
+    RegisterTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        platform:
+          type: string
+          enum: [ios, android, web]
+
+    DeleteTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
 
   responses:
     BadRequest:

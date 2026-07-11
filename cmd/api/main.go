@@ -10,12 +10,14 @@ import (
 	"github.com/LuizFernando991/gym-api/internal/features/auth"
 	"github.com/LuizFernando991/gym-api/internal/features/group"
 	"github.com/LuizFernando991/gym-api/internal/features/leveling"
+	"github.com/LuizFernando991/gym-api/internal/features/notification"
 	"github.com/LuizFernando991/gym-api/internal/features/task"
 	"github.com/LuizFernando991/gym-api/internal/features/usermetrics"
 	"github.com/LuizFernando991/gym-api/internal/features/workout"
 	"github.com/LuizFernando991/gym-api/internal/infra/cache"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/router"
 	"github.com/LuizFernando991/gym-api/internal/infra/http/server"
+	"github.com/LuizFernando991/gym-api/internal/infra/push"
 	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 	"github.com/LuizFernando991/gym-api/internal/shared/httputil"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -38,16 +40,19 @@ func main() {
 
 	uploader := buildUploader(cfg.Storage)
 	rateLimiter := buildRateLimiter(cfg.Redis)
+	pushSender := push.NewExpoSender(cfg.Push.ExpoAccessToken)
 
 	levelingModule := leveling.NewModule(db)
+	notificationModule := notification.NewModule(db, pushSender)
 
 	modules := router.Modules{
-		Auth:        auth.NewModule(db, cfg.Auth),
-		Task:        task.NewModule(db),
-		UserMetrics: usermetrics.NewModule(db),
-		Workout:     workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter),
-		Leveling:    levelingModule,
-		Group:       group.NewModule(db, uploader, rateLimiter),
+		Auth:         auth.NewModule(db, cfg.Auth),
+		Task:         task.NewModule(db),
+		UserMetrics:  usermetrics.NewModule(db),
+		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),
+		Leveling:     levelingModule,
+		Group:        group.NewModule(db, uploader, rateLimiter),
+		Notification: notificationModule,
 	}
 
 	httpRouter := router.NewRouter(cfg, modules)
