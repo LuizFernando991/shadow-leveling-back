@@ -8,7 +8,7 @@ import (
 )
 
 type Repository interface {
-	CreateUser(ctx context.Context, email, passwordHash string) (*User, error)
+	CreateUser(ctx context.Context, email string) (*User, error)
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
 	FindUserByID(ctx context.Context, id string) (*User, error)
 	MarkUserVerified(ctx context.Context, email string) error
@@ -19,6 +19,9 @@ type Repository interface {
 	FindSessionByID(ctx context.Context, id string) (*Session, error)
 	ListSessionsByUserID(ctx context.Context, userID string) ([]*Session, error)
 	RevokeSession(ctx context.Context, id string) error
+
+	FindUserIDByProviderSubject(ctx context.Context, provider, subject string) (string, error)
+	CreateIdentity(ctx context.Context, userID, provider, subject string) error
 
 	CreateEmailVerification(ctx context.Context, email, code string, vtype VerificationType, expiresAt time.Time) (*EmailVerification, error)
 	FindEmailVerification(ctx context.Context, email, code string, vtype VerificationType) (*EmailVerification, error)
@@ -36,14 +39,14 @@ func NewRepository(db *sql.DB) Repository {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-func (r *postgresRepository) CreateUser(ctx context.Context, email, passwordHash string) (*User, error) {
+func (r *postgresRepository) CreateUser(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`INSERT INTO users (email, password_hash)
-		 VALUES ($1, $2)
-		 RETURNING id, email, password_hash, nickname, verified_at, created_at, updated_at`,
-		email, passwordHash,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+		`INSERT INTO users (email)
+		 VALUES ($1)
+		 RETURNING id, email, nickname, verified_at, created_at, updated_at`,
+		email,
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: create user: %w", err)
 	}
@@ -53,10 +56,10 @@ func (r *postgresRepository) CreateUser(ctx context.Context, email, passwordHash
 func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, nickname, verified_at, created_at, updated_at
+		`SELECT id, email, nickname, verified_at, created_at, updated_at
 		 FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user: %w", err)
 	}
@@ -66,10 +69,10 @@ func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) 
 func (r *postgresRepository) FindUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, nickname, verified_at, created_at, updated_at
+		`SELECT id, email, nickname, verified_at, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user by id: %w", err)
 	}
@@ -81,9 +84,9 @@ func (r *postgresRepository) UpdateNickname(ctx context.Context, userID, nicknam
 	err := r.db.QueryRowContext(ctx,
 		`UPDATE users SET nickname = $2, updated_at = NOW()
 		 WHERE id = $1
-		 RETURNING id, email, password_hash, nickname, verified_at, created_at, updated_at`,
+		 RETURNING id, email, nickname, verified_at, created_at, updated_at`,
 		userID, nickname,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: update nickname: %w", err)
 	}
@@ -97,6 +100,31 @@ func (r *postgresRepository) MarkUserVerified(ctx context.Context, email string)
 	)
 	if err != nil {
 		return fmt.Errorf("auth: mark user verified: %w", err)
+	}
+	return nil
+}
+
+// ── Identities ────────────────────────────────────────────────────────────────
+
+func (r *postgresRepository) FindUserIDByProviderSubject(ctx context.Context, provider, subject string) (string, error) {
+	var userID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT user_id FROM identities WHERE provider = $1 AND provider_subject = $2`,
+		provider, subject,
+	).Scan(&userID)
+	if err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
+func (r *postgresRepository) CreateIdentity(ctx context.Context, userID, provider, subject string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO identities (user_id, provider, provider_subject) VALUES ($1, $2, $3)`,
+		userID, provider, subject,
+	)
+	if err != nil {
+		return fmt.Errorf("auth: create identity: %w", err)
 	}
 	return nil
 }

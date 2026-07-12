@@ -3,13 +3,12 @@ package auth
 import "time"
 
 type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	Nickname     *string
-	VerifiedAt   *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID         string
+	Email      string
+	Nickname   *string
+	VerifiedAt *time.Time
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 type Session struct {
@@ -28,6 +27,14 @@ func (s *Session) IsValid() bool {
 		return false
 	}
 	return s.ExpiresAt == nil || s.ExpiresAt.After(time.Now())
+}
+
+// ProviderClaims is the identity a social provider (Google/Apple) asserts about
+// a user, extracted from a verified ID token.
+type ProviderClaims struct {
+	Subject       string `json:"subject"` // stable per-provider user id (the token's "sub")
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
 }
 
 type VerificationType string

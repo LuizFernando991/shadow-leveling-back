@@ -2,18 +2,15 @@ package auth
 
 import "time"
 
-type RegisterRequest struct {
-	Email     string `json:"email"    validate:"required,email"`
-	Password  string `json:"password" validate:"required,min=8"`
-	IPAddress string `json:"-"`
-	UserAgent string `json:"-"`
+type EmailCodeRequest struct {
+	Email string `json:"email" validate:"required,email"`
 }
 
-type LoginRequest struct {
-	Email     string `json:"email"    validate:"required,email"`
-	Password  string `json:"password" validate:"required"`
-	IPAddress string `json:"-"`
+type SocialLoginRequest struct {
+	Provider  string `json:"provider" validate:"required,oneof=google apple"`
+	IDToken   string `json:"id_token" validate:"required"`
 	UserAgent string `json:"-"`
+	IPAddress string `json:"-"`
 }
 
 type VerifyEmailRequest struct {

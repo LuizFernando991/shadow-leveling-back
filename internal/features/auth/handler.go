@@ -5,24 +5,36 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/shared/httputil"
 	"github.com/LuizFernando991/gym-api/internal/shared/validate"
 	"github.com/gorilla/mux"
 )
 
+// Rate limits for the unauthenticated passwordless email flow.
+const (
+	codeSendLimit       = 3
+	codeSendWindow      = time.Minute
+	codeSendHourlyLimit = 10
+	codeVerifyLimit     = 5
+	codeVerifyWindow    = 10 * time.Minute
+)
+
 type Handler struct {
-	svc Service
+	svc     Service
+	limiter httputil.RateAllower
 }
 
-func NewHandler(svc Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc Service, limiter httputil.RateAllower) *Handler {
+	return &Handler{svc: svc, limiter: limiter}
 }
 
 func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler) http.Handler) {
 	public := r.PathPrefix("/auth").Subrouter()
-	public.HandleFunc("/register", h.register).Methods(http.MethodPost)
-	public.HandleFunc("/login", h.login).Methods(http.MethodPost)
+	public.HandleFunc("/email/request", h.requestEmailCode).Methods(http.MethodPost)
+	public.HandleFunc("/email/verify", h.verifyEmailCode).Methods(http.MethodPost)
+	public.HandleFunc("/social", h.socialLogin).Methods(http.MethodPost)
 
 	private := r.PathPrefix("/auth").Subrouter()
 	private.Use(authMiddleware)
@@ -33,8 +45,8 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	private.HandleFunc("/sessions/{id}", h.revokeSession).Methods(http.MethodDelete)
 }
 
-func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
-	var req RegisterRequest
+func (h *Handler) requestEmailCode(w http.ResponseWriter, r *http.Request) {
+	var req EmailCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -43,24 +55,55 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	req.IPAddress = clientIP(r)
-	req.UserAgent = r.UserAgent()
-
-	session, err := h.svc.Register(r.Context(), req)
-	if errors.Is(err, ErrEmailTaken) {
-		httputil.Error(w, http.StatusConflict, "email already in use")
+	// Short burst throttle per email, plus an hourly cap per email+IP so a
+	// single sender can't bomb an inbox over a longer window.
+	if !httputil.EnforceRateLimit(w, r, h.limiter, "email-code:"+req.Email, codeSendLimit, codeSendWindow) {
 		return
 	}
-	if err != nil {
+	if !httputil.EnforceRateLimit(w, r, h.limiter, "email-code-hourly:"+req.Email+":"+clientIP(r), codeSendHourlyLimit, time.Hour) {
+		return
+	}
+
+	if err := h.svc.RequestEmailCode(r.Context(), req.Email); err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-
-	httputil.JSON(w, http.StatusCreated, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
+	httputil.JSON(w, http.StatusOK, MessageResponse{Message: "verification code sent"})
 }
 
-func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
+func (h *Handler) verifyEmailCode(w http.ResponseWriter, r *http.Request) {
+	var req VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// ponytail: cap verify attempts per email via the limiter instead of a
+	// per-code attempt counter. 5 tries / 10min against a 1e6 code space makes
+	// brute force negligible; add a per-code counter only if that ever matters.
+	if !httputil.EnforceRateLimit(w, r, h.limiter, "email-verify:"+req.Email, codeVerifyLimit, codeVerifyWindow) {
+		return
+	}
+	req.IPAddress = clientIP(r)
+	req.UserAgent = r.UserAgent()
+
+	session, err := h.svc.VerifyEmailCode(r.Context(), req)
+	if errors.Is(err, ErrInvalidCode) {
+		httputil.Error(w, http.StatusUnprocessableEntity, "invalid or expired code")
+		return
+	}
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
+}
+
+func (h *Handler) socialLogin(w http.ResponseWriter, r *http.Request) {
+	var req SocialLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -72,16 +115,15 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	req.IPAddress = clientIP(r)
 	req.UserAgent = r.UserAgent()
 
-	session, err := h.svc.Login(r.Context(), req)
-	if errors.Is(err, ErrInvalidCredentials) {
-		httputil.Error(w, http.StatusUnauthorized, "invalid email or password")
+	session, err := h.svc.SocialLogin(r.Context(), req)
+	if errors.Is(err, ErrInvalidToken) {
+		httputil.Error(w, http.StatusUnauthorized, "invalid provider token")
 		return
 	}
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-
 	httputil.JSON(w, http.StatusOK, LoginResponse{Token: session.Token, ExpiresAt: session.ExpiresAt})
 }
 

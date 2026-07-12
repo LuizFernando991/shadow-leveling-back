@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/testutil"
 )
@@ -81,66 +82,39 @@ func assertStatus(t *testing.T, resp *http.Response, want int) {
 }
 
 // mustGetCode reads the latest verification code for an email from the DB,
-// bypassing the email provider entirely.
-func mustGetCode(t *testing.T, emailAddr, vtype string) string {
+// bypassing the email provider entirely. The passwordless flow uses the
+// "login" verification type for both sign-up and sign-in.
+func mustGetCode(t *testing.T, emailAddr string) string {
 	t.Helper()
-	code, err := testutil.LatestVerificationCode(db, emailAddr, vtype)
+	code, err := testutil.LatestVerificationCode(db, emailAddr, "login")
 	if err != nil {
 		t.Fatalf("get verification code: %v", err)
 	}
 	return code
 }
 
-// mustRegister creates a verified user and returns the session token.
-func mustRegister(t *testing.T, emailAddr, password string) string {
+// mustAuth runs the full passwordless flow (request code → verify) and returns
+// the session token. Creates the account on first use, logs in thereafter.
+func mustAuth(t *testing.T, emailAddr string) string {
 	t.Helper()
 
-	resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-		"email": emailAddr, "password": password,
-	}, "")
-	if resp.StatusCode != http.StatusCreated {
-		resp.Body.Close()
-		t.Fatalf("mustRegister: POST /auth/register got %d, want 201", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	code := mustGetCode(t, emailAddr, "register")
-
-	resp2 := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
-		"email": emailAddr, "code": code,
-	}, "")
-	if resp2.StatusCode != http.StatusOK {
-		resp2.Body.Close()
-		t.Fatalf("mustRegister: POST /auth/register/verify got %d, want 200", resp2.StatusCode)
-	}
-	var body struct {
-		Token string `json:"token"`
-	}
-	decodeBody(t, resp2, &body)
-	return body.Token
-}
-
-// mustLogin authenticates a verified user and returns a new session token.
-func mustLogin(t *testing.T, emailAddr, password string) string {
-	t.Helper()
-
-	resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-		"email": emailAddr, "password": password,
+	resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+		"email": emailAddr,
 	}, "")
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		t.Fatalf("mustLogin: POST /auth/login got %d, want 200", resp.StatusCode)
+		t.Fatalf("mustAuth: POST /auth/email/request got %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	code := mustGetCode(t, emailAddr, "login")
+	code := mustGetCode(t, emailAddr)
 
-	resp2 := request(t, http.MethodPost, "/auth/login/verify", map[string]string{
+	resp2 := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 		"email": emailAddr, "code": code,
 	}, "")
 	if resp2.StatusCode != http.StatusOK {
 		resp2.Body.Close()
-		t.Fatalf("mustLogin: POST /auth/login/verify got %d, want 200", resp2.StatusCode)
+		t.Fatalf("mustAuth: POST /auth/email/verify got %d, want 200", resp2.StatusCode)
 	}
 	var body struct {
 		Token string `json:"token"`
@@ -149,86 +123,104 @@ func mustLogin(t *testing.T, emailAddr, password string) string {
 	return body.Token
 }
 
-// ── POST /auth/register ───────────────────────────────────────────────────────
+// ── POST /auth/email/request ──────────────────────────────────────────────────
 
-func TestRegister(t *testing.T) {
-	t.Run("sends verification code and returns 201", func(t *testing.T) {
+func TestRequestEmailCode(t *testing.T) {
+	t.Run("sends code and returns 200 for a new email", func(t *testing.T) {
 		truncate(t)
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "new@example.com", "password": "password123",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "new@example.com",
 		}, "")
-		assertStatus(t, resp, http.StatusCreated)
+		assertStatus(t, resp, http.StatusOK)
 
-		var body struct{ Message string `json:"message"` }
+		var body struct {
+			Message string `json:"message"`
+		}
 		decodeBody(t, resp, &body)
 		if body.Message == "" {
 			t.Error("expected non-empty message")
 		}
+		if _, err := testutil.LatestVerificationCode(db, "new@example.com", "login"); err != nil {
+			t.Errorf("expected a code row to be created: %v", err)
+		}
 	})
 
-	t.Run("rejects duplicate email", func(t *testing.T) {
+	t.Run("works for an existing user", func(t *testing.T) {
 		truncate(t)
-		mustRegister(t, "dup@example.com", "password123")
+		mustAuth(t, "existing@example.com")
 
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "dup@example.com", "password": "password123",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "existing@example.com",
 		}, "")
 		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusConflict)
+		assertStatus(t, resp, http.StatusOK)
+	})
+
+	t.Run("resending supersedes the previous code", func(t *testing.T) {
+		truncate(t)
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "resend@example.com",
+		}, "")
+		resp.Body.Close()
+		first := mustGetCode(t, "resend@example.com")
+
+		resp2 := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "resend@example.com",
+		}, "")
+		resp2.Body.Close()
+		second := mustGetCode(t, "resend@example.com")
+
+		if first == second {
+			t.Fatal("expected a new code on resend")
+		}
+		// The superseded code no longer verifies; the new one does.
+		old := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
+			"email": "resend@example.com", "code": first,
+		}, "")
+		defer old.Body.Close()
+		assertStatus(t, old, http.StatusUnprocessableEntity)
+
+		fresh := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
+			"email": "resend@example.com", "code": second,
+		}, "")
+		defer fresh.Body.Close()
+		assertStatus(t, fresh, http.StatusOK)
 	})
 
 	t.Run("rejects invalid email format", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "not-an-email", "password": "password123",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-
-	t.Run("rejects password shorter than 8 characters", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "short@example.com", "password": "abc",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "not-an-email",
 		}, "")
 		defer resp.Body.Close()
 		assertStatus(t, resp, http.StatusBadRequest)
 	})
 
 	t.Run("rejects missing email", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"password": "password123",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-
-	t.Run("rejects missing password", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "nopass@example.com",
-		}, "")
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{}, "")
 		defer resp.Body.Close()
 		assertStatus(t, resp, http.StatusBadRequest)
 	})
 
 	t.Run("rejects empty body", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register", nil, "")
+		resp := request(t, http.MethodPost, "/auth/email/request", nil, "")
 		defer resp.Body.Close()
 		assertStatus(t, resp, http.StatusBadRequest)
 	})
 }
 
-// ── POST /auth/register/verify ────────────────────────────────────────────────
+// ── POST /auth/email/verify ───────────────────────────────────────────────────
 
-func TestVerifyRegistration(t *testing.T) {
-	t.Run("returns token on valid code", func(t *testing.T) {
+func TestVerifyEmailCode(t *testing.T) {
+	t.Run("creates account and returns token for a new email", func(t *testing.T) {
 		truncate(t)
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "verify@example.com", "password": "password123",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "signup@example.com",
 		}, "")
 		resp.Body.Close()
 
-		code := mustGetCode(t, "verify@example.com", "register")
-		resp2 := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
-			"email": "verify@example.com", "code": code,
+		code := mustGetCode(t, "signup@example.com")
+		resp2 := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
+			"email": "signup@example.com", "code": code,
 		}, "")
 		assertStatus(t, resp2, http.StatusOK)
 
@@ -237,26 +229,73 @@ func TestVerifyRegistration(t *testing.T) {
 		}
 		decodeBody(t, resp2, &body)
 		if body.Token == "" {
-			t.Error("expected non-empty token")
+			t.Fatal("expected non-empty token")
+		}
+
+		// The token authenticates as the newly-created user.
+		meResp := request(t, http.MethodGet, "/auth/me", nil, body.Token)
+		var me struct {
+			Email string `json:"email"`
+		}
+		decodeBody(t, meResp, &me)
+		if me.Email != "signup@example.com" {
+			t.Errorf("me email: got %q, want %q", me.Email, "signup@example.com")
+		}
+	})
+
+	t.Run("logs in an existing user without duplicating the account", func(t *testing.T) {
+		truncate(t)
+		first := mustAuth(t, "return@example.com")
+		second := mustAuth(t, "return@example.com")
+		if first == second {
+			t.Error("expected a distinct session token on second auth")
+		}
+		// Both tokens resolve to the same user (same email).
+		for _, tok := range []string{first, second} {
+			meResp := request(t, http.MethodGet, "/auth/me", nil, tok)
+			var me struct {
+				Email string `json:"email"`
+			}
+			decodeBody(t, meResp, &me)
+			if me.Email != "return@example.com" {
+				t.Errorf("me email: got %q, want %q", me.Email, "return@example.com")
+			}
 		}
 	})
 
 	t.Run("rejects wrong code", func(t *testing.T) {
 		truncate(t)
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "wrongcode@example.com", "password": "password123",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "wrongcode@example.com",
 		}, "")
 		resp.Body.Close()
 
-		resp2 := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
+		resp2 := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 			"email": "wrongcode@example.com", "code": "000000",
 		}, "")
 		defer resp2.Body.Close()
 		assertStatus(t, resp2, http.StatusUnprocessableEntity)
 	})
 
+	t.Run("rejects expired code", func(t *testing.T) {
+		truncate(t)
+		if _, err := db.Exec(
+			`INSERT INTO email_verifications (email, code, type, expires_at)
+			 VALUES ($1, $2, 'login', $3)`,
+			"expired@example.com", "654321", time.Now().Add(-time.Minute),
+		); err != nil {
+			t.Fatalf("insert expired code: %v", err)
+		}
+
+		resp := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
+			"email": "expired@example.com", "code": "654321",
+		}, "")
+		defer resp.Body.Close()
+		assertStatus(t, resp, http.StatusUnprocessableEntity)
+	})
+
 	t.Run("rejects code with non-digit characters", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
+		resp := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 			"email": "user@example.com", "code": "abc123",
 		}, "")
 		defer resp.Body.Close()
@@ -264,7 +303,7 @@ func TestVerifyRegistration(t *testing.T) {
 	})
 
 	t.Run("rejects code with wrong length", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
+		resp := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 			"email": "user@example.com", "code": "123",
 		}, "")
 		defer resp.Body.Close()
@@ -273,20 +312,20 @@ func TestVerifyRegistration(t *testing.T) {
 
 	t.Run("code can only be used once", func(t *testing.T) {
 		truncate(t)
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "once@example.com", "password": "password123",
+		resp := request(t, http.MethodPost, "/auth/email/request", map[string]string{
+			"email": "once@example.com",
 		}, "")
 		resp.Body.Close()
 
-		code := mustGetCode(t, "once@example.com", "register")
+		code := mustGetCode(t, "once@example.com")
 
-		resp2 := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
+		resp2 := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 			"email": "once@example.com", "code": code,
 		}, "")
 		assertStatus(t, resp2, http.StatusOK)
 		resp2.Body.Close()
 
-		resp3 := request(t, http.MethodPost, "/auth/register/verify", map[string]string{
+		resp3 := request(t, http.MethodPost, "/auth/email/verify", map[string]string{
 			"email": "once@example.com", "code": code,
 		}, "")
 		defer resp3.Body.Close()
@@ -294,133 +333,11 @@ func TestVerifyRegistration(t *testing.T) {
 	})
 }
 
-// ── POST /auth/login ──────────────────────────────────────────────────────────
-
-func TestLogin(t *testing.T) {
-	truncate(t)
-	mustRegister(t, "login@example.com", "password123")
-
-	t.Run("sends verification code on valid credentials", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "login@example.com", "password": "password123",
-		}, "")
-		assertStatus(t, resp, http.StatusOK)
-
-		var body struct{ Message string `json:"message"` }
-		decodeBody(t, resp, &body)
-		if body.Message == "" {
-			t.Error("expected non-empty message")
-		}
-	})
-
-	t.Run("rejects wrong password", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "login@example.com", "password": "wrongpassword",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusUnauthorized)
-	})
-
-	t.Run("rejects unknown email", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "ghost@example.com", "password": "password123",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusUnauthorized)
-	})
-
-	t.Run("rejects unverified user", func(t *testing.T) {
-		truncate(t)
-		// register but do NOT verify
-		resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-			"email": "unverified@example.com", "password": "password123",
-		}, "")
-		resp.Body.Close()
-
-		resp2 := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "unverified@example.com", "password": "password123",
-		}, "")
-		defer resp2.Body.Close()
-		assertStatus(t, resp2, http.StatusForbidden)
-	})
-
-	t.Run("rejects missing email", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"password": "password123",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-
-	t.Run("rejects missing password", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "login@example.com",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-
-	t.Run("rejects empty body", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login", nil, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-}
-
-// ── POST /auth/login/verify ───────────────────────────────────────────────────
-
-func TestVerifyLogin(t *testing.T) {
-	t.Run("returns token on valid code", func(t *testing.T) {
-		truncate(t)
-		mustRegister(t, "loginverify@example.com", "password123")
-
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "loginverify@example.com", "password": "password123",
-		}, "")
-		resp.Body.Close()
-
-		code := mustGetCode(t, "loginverify@example.com", "login")
-		resp2 := request(t, http.MethodPost, "/auth/login/verify", map[string]string{
-			"email": "loginverify@example.com", "code": code,
-		}, "")
-		assertStatus(t, resp2, http.StatusOK)
-
-		var body struct{ Token string `json:"token"` }
-		decodeBody(t, resp2, &body)
-		if body.Token == "" {
-			t.Error("expected non-empty token")
-		}
-	})
-
-	t.Run("rejects wrong code", func(t *testing.T) {
-		truncate(t)
-		mustRegister(t, "badcode@example.com", "password123")
-		resp := request(t, http.MethodPost, "/auth/login", map[string]string{
-			"email": "badcode@example.com", "password": "password123",
-		}, "")
-		resp.Body.Close()
-
-		resp2 := request(t, http.MethodPost, "/auth/login/verify", map[string]string{
-			"email": "badcode@example.com", "code": "000000",
-		}, "")
-		defer resp2.Body.Close()
-		assertStatus(t, resp2, http.StatusUnprocessableEntity)
-	})
-
-	t.Run("rejects invalid code format", func(t *testing.T) {
-		resp := request(t, http.MethodPost, "/auth/login/verify", map[string]string{
-			"email": "user@example.com", "code": "ABCDEF",
-		}, "")
-		defer resp.Body.Close()
-		assertStatus(t, resp, http.StatusBadRequest)
-	})
-}
-
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 
 func TestMe(t *testing.T) {
 	truncate(t)
-	token := mustRegister(t, "me@example.com", "password123")
+	token := mustAuth(t, "me@example.com")
 
 	t.Run("returns current user for valid token", func(t *testing.T) {
 		resp := request(t, http.MethodGet, "/auth/me", nil, token)
@@ -458,7 +375,7 @@ func TestMe(t *testing.T) {
 func TestLogout(t *testing.T) {
 	t.Run("invalidates the session token", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "logout@example.com", "password123")
+		token := mustAuth(t, "logout@example.com")
 
 		resp := request(t, http.MethodPost, "/auth/logout", nil, token)
 		defer resp.Body.Close()
@@ -481,8 +398,8 @@ func TestLogout(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	t.Run("returns all active sessions for the user", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "sessions@example.com", "password123")
-		mustLogin(t, "sessions@example.com", "password123")
+		token := mustAuth(t, "sessions@example.com")
+		mustAuth(t, "sessions@example.com")
 
 		resp := request(t, http.MethodGet, "/auth/sessions", nil, token)
 		assertStatus(t, resp, http.StatusOK)
@@ -506,8 +423,8 @@ func TestListSessions(t *testing.T) {
 
 	t.Run("excludes sessions revoked by logout", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "revcheck@example.com", "password123")
-		tok2 := mustLogin(t, "revcheck@example.com", "password123")
+		token := mustAuth(t, "revcheck@example.com")
+		tok2 := mustAuth(t, "revcheck@example.com")
 
 		logout := request(t, http.MethodPost, "/auth/logout", nil, tok2)
 		logout.Body.Close()
@@ -524,7 +441,7 @@ func TestListSessions(t *testing.T) {
 
 	t.Run("does not expose ip_address field", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "noip@example.com", "password123")
+		token := mustAuth(t, "noip@example.com")
 
 		resp := request(t, http.MethodGet, "/auth/sessions", nil, token)
 		assertStatus(t, resp, http.StatusOK)
@@ -541,7 +458,7 @@ func TestListSessions(t *testing.T) {
 
 	t.Run("does not expose revoked_at field", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "norevokedat@example.com", "password123")
+		token := mustAuth(t, "norevokedat@example.com")
 
 		resp := request(t, http.MethodGet, "/auth/sessions", nil, token)
 		assertStatus(t, resp, http.StatusOK)
@@ -568,8 +485,8 @@ func TestListSessions(t *testing.T) {
 func TestRevokeSession(t *testing.T) {
 	t.Run("revokes a session and removes it from the list", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "revoke@example.com", "password123")
-		mustLogin(t, "revoke@example.com", "password123")
+		token := mustAuth(t, "revoke@example.com")
+		mustAuth(t, "revoke@example.com")
 
 		listResp := request(t, http.MethodGet, "/auth/sessions", nil, token)
 		var sessions []struct {
@@ -580,7 +497,6 @@ func TestRevokeSession(t *testing.T) {
 			t.Fatalf("expected 2 sessions before revoke, got %d", len(sessions))
 		}
 
-		// revoke the newest session (sessions[0] = most recent login)
 		resp := request(t, http.MethodDelete, "/auth/sessions/"+sessions[0].ID, nil, token)
 		defer resp.Body.Close()
 		assertStatus(t, resp, http.StatusNoContent)
@@ -595,7 +511,7 @@ func TestRevokeSession(t *testing.T) {
 
 	t.Run("returns 404 for non-existent session", func(t *testing.T) {
 		truncate(t)
-		token := mustRegister(t, "notfound@example.com", "password123")
+		token := mustAuth(t, "notfound@example.com")
 
 		resp := request(t, http.MethodDelete, "/auth/sessions/00000000-0000-0000-0000-000000000000", nil, token)
 		defer resp.Body.Close()
@@ -604,8 +520,8 @@ func TestRevokeSession(t *testing.T) {
 
 	t.Run("returns 403 when revoking another user session", func(t *testing.T) {
 		truncate(t)
-		tok1 := mustRegister(t, "user1@example.com", "password123")
-		tok2 := mustRegister(t, "user2@example.com", "password123")
+		tok1 := mustAuth(t, "user1@example.com")
+		tok2 := mustAuth(t, "user2@example.com")
 
 		listResp := request(t, http.MethodGet, "/auth/sessions", nil, tok1)
 		var sessions []struct {

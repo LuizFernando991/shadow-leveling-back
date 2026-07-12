@@ -40,21 +40,12 @@ func uploadImage(t *testing.T, method, path, token string) *http.Response {
 	return resp
 }
 
-// registerUser creates a user via the single-step register flow and returns the token.
-func registerUser(t *testing.T, email, password string) string {
+// registerUser creates a user via the passwordless email flow and returns the
+// token. The password parameter is retained for call-site compatibility and
+// ignored (auth is passwordless).
+func registerUser(t *testing.T, email, _ string) string {
 	t.Helper()
-	resp := request(t, http.MethodPost, "/auth/register", map[string]string{
-		"email": email, "password": password,
-	}, "")
-	assertStatus(t, resp, http.StatusCreated)
-	var body struct {
-		Token string `json:"token"`
-	}
-	decodeBody(t, resp, &body)
-	if body.Token == "" {
-		t.Fatal("registerUser: empty token")
-	}
-	return body.Token
+	return mustAuth(t, email)
 }
 
 // createCompletedSession creates a workout and logs a completed session on date,

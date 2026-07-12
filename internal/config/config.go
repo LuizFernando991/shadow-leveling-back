@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -45,6 +46,13 @@ type PushConfig struct {
 	ExpoAccessToken string
 }
 
+// SocialConfig holds the accepted OAuth client IDs (token audiences) per
+// provider. Each platform (iOS/Android/web) registers its own client ID.
+type SocialConfig struct {
+	GoogleClientIDs []string
+	AppleClientIDs  []string
+}
+
 // StorageConfig configures image uploads (Firebase Storage / GCS bucket).
 // When Bucket is empty the app falls back to a noop uploader (local dev/tests).
 // Credentials come from the individual service-account fields (preferred for
@@ -65,6 +73,7 @@ type Config struct {
 	Storage StorageConfig
 	Redis   RedisConfig
 	Push    PushConfig
+	Social  SocialConfig
 }
 
 func Load() *Config {
@@ -110,7 +119,26 @@ func Load() *Config {
 		Push: PushConfig{
 			ExpoAccessToken: os.Getenv("EXPO_ACCESS_TOKEN"),
 		},
+		Social: SocialConfig{
+			GoogleClientIDs: splitEnv("GOOGLE_CLIENT_IDS"),
+			AppleClientIDs:  splitEnv("APPLE_CLIENT_IDS"),
+		},
 	}
+}
+
+// splitEnv reads a comma-separated env var into a trimmed, empty-free slice.
+func splitEnv(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if s := strings.TrimSpace(part); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func mustGetEnv(key string) string {
