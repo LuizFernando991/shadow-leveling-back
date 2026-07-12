@@ -11,13 +11,13 @@ type CreateExerciseRequest struct {
 type CreateWorkoutRequest struct {
 	Name        string   `json:"name"         validate:"required,min=1,max=100"`
 	Description *string  `json:"description"  validate:"omitempty,max=500"`
-	DaysOfWeek  DaySlice `json:"days_of_week" validate:"required,min=1,dive,oneof=monday tuesday wednesday thursday friday"`
+	DaysOfWeek  DaySlice `json:"days_of_week" validate:"required,min=1,dive,oneof=monday tuesday wednesday thursday friday saturday sunday"`
 }
 
 type UpdateWorkoutRequest struct {
 	Name        *string  `json:"name"         validate:"omitempty,min=1,max=100"`
 	Description *string  `json:"description"  validate:"omitempty,max=500"`
-	DaysOfWeek  DaySlice `json:"days_of_week" validate:"omitempty,min=1,dive,oneof=monday tuesday wednesday thursday friday"`
+	DaysOfWeek  DaySlice `json:"days_of_week" validate:"omitempty,min=1,dive,oneof=monday tuesday wednesday thursday friday saturday sunday"`
 	Active      *bool    `json:"active"`
 }
 

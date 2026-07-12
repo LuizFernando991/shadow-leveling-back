@@ -455,6 +455,9 @@ type fakeRepository struct {
 	missedSessionsUserID string
 	missedSessionsFrom   time.Time
 	missedSessionsTo     time.Time
+
+	countCompletedSessionsResult int
+	countCompletedSessionsErr    error
 }
 
 func (r *fakeRepository) CreateExercise(ctx context.Context, name string, etype ExerciseType, unit string) (*Exercise, error) {
@@ -677,4 +680,8 @@ func (r *fakeRepository) GetMissedSessions(ctx context.Context, userID string, f
 		return nil, r.getMissedSessionsErr
 	}
 	return r.missedSessions, nil
+}
+
+func (r *fakeRepository) CountCompletedSessionsBetween(ctx context.Context, userID string, from, to time.Time) (int, error) {
+	return r.countCompletedSessionsResult, r.countCompletedSessionsErr
 }

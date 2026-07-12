@@ -20,11 +20,22 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	api.Use(authMiddleware)
 
 	api.HandleFunc("/user-metrics/today", h.getTodayMissions).Methods(http.MethodGet)
+	api.HandleFunc("/user-metrics/weekly", h.getWeeklySummary).Methods(http.MethodGet)
 }
 
 func (h *Handler) getTodayMissions(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.SessionFromContext(r.Context()).UserID
 	resp, err := h.svc.GetTodayMissions(r.Context(), userID)
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) getWeeklySummary(w http.ResponseWriter, r *http.Request) {
+	userID := httputil.SessionFromContext(r.Context()).UserID
+	resp, err := h.svc.GetWeeklySummary(r.Context(), userID)
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return

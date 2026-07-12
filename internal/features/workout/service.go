@@ -67,6 +67,7 @@ type Service interface {
 
 	GetWorkoutProgress(ctx context.Context, workoutID, userID string, exerciseID *string) ([]ExerciseProgress, error)
 	GetMissedSessions(ctx context.Context, userID string, from, to time.Time) ([]MissedSession, error)
+	CountCompletedSessions(ctx context.Context, userID string, from, to time.Time) (int, error)
 }
 
 type service struct {
@@ -576,4 +577,12 @@ func (s *service) GetMissedSessions(ctx context.Context, userID string, from, to
 		return nil, fmt.Errorf("workout: get missed sessions: %w", err)
 	}
 	return missed, nil
+}
+
+func (s *service) CountCompletedSessions(ctx context.Context, userID string, from, to time.Time) (int, error) {
+	count, err := s.repo.CountCompletedSessionsBetween(ctx, userID, from, to)
+	if err != nil {
+		return 0, fmt.Errorf("workout: count completed sessions: %w", err)
+	}
+	return count, nil
 }

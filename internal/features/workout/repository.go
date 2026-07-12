@@ -42,6 +42,7 @@ type Repository interface {
 
 	GetExerciseProgress(ctx context.Context, workoutID string, exerciseID *string) ([]ExerciseProgress, error)
 	GetMissedSessions(ctx context.Context, userID string, from, to time.Time) ([]MissedSession, error)
+	CountCompletedSessionsBetween(ctx context.Context, userID string, from, to time.Time) (int, error)
 }
 
 type postgresRepository struct {
@@ -253,6 +254,24 @@ func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string) ([
 		result[i] = WorkoutDetail{Workout: w, Exercises: exs, DoneToday: doneTodayByWorkoutID[w.ID]}
 	}
 	return result, nil
+}
+
+func (r *postgresRepository) CountCompletedSessionsBetween(ctx context.Context, userID string, from, to time.Time) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*)
+		 FROM workout_sessions ws
+		 JOIN workouts w ON w.id = ws.workout_id
+		 WHERE w.user_id = $1
+		   AND ws.status = 'complete'
+		   AND ws.date >= $2::date
+		   AND ws.date <= $3::date`,
+		userID, from, to,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("workout: count completed sessions between: %w", err)
+	}
+	return count, nil
 }
 
 func (r *postgresRepository) HasCompletedSessionOnDate(ctx context.Context, workoutID string, date time.Time) (bool, error) {
