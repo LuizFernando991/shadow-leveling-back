@@ -170,7 +170,7 @@ func (r *postgresRepository) SetCover(ctx context.Context, groupID, coverURL str
 func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, from, to time.Time) ([]RankingEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT gm.user_id,
-		        COALESCE(u.nickname, u.email) AS name,
+		        COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
 		        COUNT(DISTINCT ws.date) AS points
 		   FROM group_members gm
 		   JOIN users u ON u.id = gm.user_id
@@ -203,7 +203,7 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 // keyset pagination on (created_at, id).
 func (r *postgresRepository) Feed(ctx context.Context, groupID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT ws.id, w.user_id, COALESCE(u.nickname, u.email) AS name,
+		`SELECT ws.id, w.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
 		        w.name AS workout_name, ws.photo_url, ws.created_at
 		   FROM workout_sessions ws
 		   JOIN workouts w ON w.id = ws.workout_id
