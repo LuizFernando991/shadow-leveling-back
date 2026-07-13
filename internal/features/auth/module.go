@@ -6,6 +6,7 @@ import (
 
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
+	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 	"github.com/LuizFernando991/gym-api/internal/shared/httputil"
 	sharedmiddleware "github.com/LuizFernando991/gym-api/internal/shared/middleware"
 	"github.com/gorilla/mux"
@@ -16,9 +17,9 @@ type Module struct {
 	middleware func(http.Handler) http.Handler
 }
 
-func NewModule(db *sql.DB, cfg config.AuthConfig, sender email.Sender, limiter httputil.RateAllower, verifier TokenVerifier) *Module {
+func NewModule(db *sql.DB, cfg config.AuthConfig, sender email.Sender, limiter httputil.RateAllower, verifier TokenVerifier, uploader storage.Uploader) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo, cfg, sender, verifier)
+	svc := NewService(repo, cfg, sender, verifier, uploader)
 	return &Module{
 		handler:    NewHandler(svc, limiter),
 		middleware: sharedmiddleware.Auth(svc),

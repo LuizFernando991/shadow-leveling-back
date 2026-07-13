@@ -50,7 +50,7 @@ func main() {
 	notificationModule := notification.NewModule(db, pushSender)
 
 	modules := router.Modules{
-		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter, socialVerifier),
+		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter, socialVerifier, uploader),
 		Task:         task.NewModule(db),
 		UserMetrics:  usermetrics.NewModule(db),
 		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),

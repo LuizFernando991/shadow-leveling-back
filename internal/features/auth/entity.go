@@ -6,6 +6,7 @@ type User struct {
 	ID         string
 	Email      string
 	Nickname   *string
+	AvatarURL  *string
 	VerifiedAt *time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time

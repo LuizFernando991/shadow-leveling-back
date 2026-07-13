@@ -44,7 +44,18 @@ type UserResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Nickname  *string   `json:"nickname"`
+	AvatarURL *string   `json:"avatar_url"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+func newUserResponse(u *User) UserResponse {
+	return UserResponse{
+		ID:        u.ID,
+		Email:     u.Email,
+		Nickname:  u.Nickname,
+		AvatarURL: u.AvatarURL,
+		CreatedAt: u.CreatedAt,
+	}
 }
 
 type UpdateProfileRequest struct {

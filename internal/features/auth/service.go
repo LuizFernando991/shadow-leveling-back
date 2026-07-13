@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/config"
 	"github.com/LuizFernando991/gym-api/internal/infra/email"
+	"github.com/LuizFernando991/gym-api/internal/infra/storage"
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
 )
 
@@ -20,10 +22,11 @@ import (
 const codeTTL = 15 * time.Minute
 
 var (
-	ErrSessionNotFound = errors.New("session not found")
-	ErrUnauthorized    = errors.New("unauthorized")
-	ErrInvalidCode     = errors.New("invalid or expired code")
-	ErrInvalidToken    = errors.New("invalid provider token")
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrUnauthorized     = errors.New("unauthorized")
+	ErrInvalidCode      = errors.New("invalid or expired code")
+	ErrInvalidToken     = errors.New("invalid provider token")
+	ErrUnsupportedImage = errors.New("unsupported image type")
 )
 
 // TokenVerifier verifies a social provider's ID token and returns the identity
@@ -38,6 +41,7 @@ type Service interface {
 	SocialLogin(ctx context.Context, req SocialLoginRequest) (*Session, error)
 	Me(ctx context.Context, userID string) (*User, error)
 	UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error)
+	UpdateAvatar(ctx context.Context, userID, contentType string, r io.Reader) (*User, error)
 	Logout(ctx context.Context, sessionID string) error
 	ListSessions(ctx context.Context, userID string) ([]*Session, error)
 	RevokeSession(ctx context.Context, userID, sessionID string) error
@@ -49,10 +53,11 @@ type service struct {
 	cfg      config.AuthConfig
 	sender   email.Sender
 	verifier TokenVerifier
+	uploader storage.Uploader
 }
 
-func NewService(repo Repository, cfg config.AuthConfig, sender email.Sender, verifier TokenVerifier) Service {
-	return &service{repo: repo, cfg: cfg, sender: sender, verifier: verifier}
+func NewService(repo Repository, cfg config.AuthConfig, sender email.Sender, verifier TokenVerifier, uploader storage.Uploader) Service {
+	return &service{repo: repo, cfg: cfg, sender: sender, verifier: verifier, uploader: uploader}
 }
 
 // RequestEmailCode generates a fresh 6-digit code for addr, replacing any
@@ -192,6 +197,24 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 	user, err := s.repo.UpdateNickname(ctx, userID, req.Nickname)
 	if err != nil {
 		return nil, fmt.Errorf("auth: update profile: %w", err)
+	}
+	return user, nil
+}
+
+// UpdateAvatar stores the image in the bucket under the user's id (overwriting
+// any previous avatar) and saves the resulting URL on the user.
+func (s *service) UpdateAvatar(ctx context.Context, userID, contentType string, r io.Reader) (*User, error) {
+	ext, ok := storage.ExtForContentType(contentType)
+	if !ok {
+		return nil, ErrUnsupportedImage
+	}
+	url, err := s.uploader.Upload(ctx, "avatars/"+userID+ext, contentType, r)
+	if err != nil {
+		return nil, fmt.Errorf("auth: upload avatar: %w", err)
+	}
+	user, err := s.repo.UpdateAvatarURL(ctx, userID, url)
+	if err != nil {
+		return nil, fmt.Errorf("auth: update avatar: %w", err)
 	}
 	return user, nil
 }

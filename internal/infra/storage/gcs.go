@@ -37,8 +37,11 @@ func NewGCSUploader(ctx context.Context, bucket string, saJSON []byte) (Uploader
 // NewGCSUploaderFromFields builds an Uploader from the individual service-account
 // fields (rather than a JSON file), so credentials can be passed as separate env
 // secrets in production. privateKey may contain literal "\n" escapes (as env vars
-// commonly do); they are converted back to real newlines.
+// commonly do); they are converted back to real newlines. Surrounding quotes are
+// stripped too: the Makefile's `include .env` exports values verbatim, so a
+// quoted key would otherwise reach the PEM parser with the quotes attached.
 func NewGCSUploaderFromFields(ctx context.Context, bucket, projectID, clientEmail, privateKey string) (Uploader, error) {
+	privateKey = strings.Trim(privateKey, `"'`)
 	saJSON, err := json.Marshal(map[string]string{
 		"type":         "service_account",
 		"project_id":   projectID,
