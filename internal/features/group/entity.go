@@ -25,9 +25,10 @@ type Group struct {
 // GroupDetail is the group page header: identity plus the week's headline scores.
 type GroupDetail struct {
 	Group
-	TopScore  int `json:"top_score"` // points of the 1st place this week
-	MyScore   int `json:"my_score"`  // logged-in user's points this week
-	MemberCnt int `json:"member_count"`
+	TopScore  int    `json:"top_score"` // points of the 1st place this week
+	TopName   string `json:"top_name"`  // name of the 1st place this week
+	MyScore   int    `json:"my_score"`  // logged-in user's points this week
+	MemberCnt int    `json:"member_count"`
 }
 
 // RankingEntry is one member's weekly standing.

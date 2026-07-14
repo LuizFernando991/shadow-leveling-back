@@ -21,7 +21,7 @@ var verificationCodeTmpl = template.Must(template.New("verification_code").Parse
                style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
           <tr>
             <td style="background:#111827;padding:28px 40px;">
-              <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.5px;">Gym</h1>
+              <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.5px;">Shadow Leveling</h1>
             </td>
           </tr>
           <tr>
@@ -48,7 +48,7 @@ var verificationCodeTmpl = template.Must(template.New("verification_code").Parse
           <tr>
             <td style="background:#f9fafb;padding:16px 40px;border-top:1px solid #e5e7eb;">
               <p style="margin:0;color:#9ca3af;font-size:12px;">
-                &copy; Gym. All rights reserved.
+                &copy; Shadow Leveling. All rights reserved.
               </p>
             </td>
           </tr>

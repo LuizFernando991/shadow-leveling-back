@@ -543,3 +543,31 @@ func TestRevokeSession(t *testing.T) {
 		assertStatus(t, resp, http.StatusUnauthorized)
 	})
 }
+
+// ── PATCH /auth/me/avatar ─────────────────────────────────────────────────────
+
+func TestUpdateAvatar(t *testing.T) {
+	truncate(t)
+	token := mustAuth(t, "avatar@example.com")
+
+	resp := uploadImage(t, http.MethodPatch, "/auth/me/avatar", token)
+	assertStatus(t, resp, http.StatusOK)
+	var body struct {
+		AvatarURL *string `json:"avatar_url"`
+	}
+	decodeBody(t, resp, &body)
+	if body.AvatarURL == nil || *body.AvatarURL == "" {
+		t.Fatal("expected avatar_url to be set after upload")
+	}
+
+	// The URL is persisted, not just echoed back.
+	resp = request(t, http.MethodGet, "/auth/me", nil, token)
+	assertStatus(t, resp, http.StatusOK)
+	var me struct {
+		AvatarURL *string `json:"avatar_url"`
+	}
+	decodeBody(t, resp, &me)
+	if me.AvatarURL == nil || *me.AvatarURL != *body.AvatarURL {
+		t.Fatalf("avatar_url not persisted: got %v", me.AvatarURL)
+	}
+}

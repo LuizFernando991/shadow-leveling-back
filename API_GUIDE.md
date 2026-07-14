@@ -163,6 +163,7 @@ GET /auth/me
   "id": "uuid",
   "email": "user@example.com",
   "nickname": "ShadowHunter",
+  "avatar_url": null,
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
@@ -194,11 +195,24 @@ PATCH /auth/me
   "id": "uuid",
   "email": "user@example.com",
   "nickname": "ShadowHunter",
+  "avatar_url": null,
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
 
 **Erros:** `400` (nickname inválido)
+
+---
+
+### Foto de perfil (avatar)
+
+```
+PATCH /auth/me/avatar
+```
+
+**multipart/form-data** com o campo `image` (jpeg/png, máx 5MB). Retorna o usuário com `avatar_url` preenchido.
+
+**Erros:** `400` (tipo de imagem não suportado / imagem muito grande), `429` (limite de 10 uploads/min)
 
 ---
 

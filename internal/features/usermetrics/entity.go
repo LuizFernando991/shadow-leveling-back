@@ -9,10 +9,12 @@ type Progress struct {
 }
 
 type WorkoutMission struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description *string `json:"description,omitempty"`
-	IsCompleted bool    `json:"is_completed"`
+	ID                  string  `json:"id"`
+	Name                string  `json:"name"`
+	Description         *string `json:"description,omitempty"`
+	IsCompleted         bool    `json:"is_completed"`
+	ExerciseCount       int     `json:"exercise_count"`
+	EstimatedDurationMin int    `json:"estimated_duration_min"`
 }
 
 type TaskMission struct {
@@ -40,4 +42,13 @@ type TodayMissionsResponse struct {
 	Progress Progress        `json:"progress"`
 	Workouts WorkoutMissions `json:"workouts"`
 	Tasks    TaskMissions    `json:"tasks"`
+}
+
+type WeeklyGoal struct {
+	Completed int `json:"completed"`
+	Scheduled int `json:"scheduled"`
+}
+
+type WeeklySummaryResponse struct {
+	Goal WeeklyGoal `json:"goal"`
 }

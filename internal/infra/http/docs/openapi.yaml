@@ -186,6 +186,35 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /auth/me/avatar:
+    patch:
+      tags: [Auth]
+      summary: Set the profile picture (multipart)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: User with avatar_url set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/logout:
     post:
       tags: [Auth]
@@ -1447,6 +1476,12 @@ components:
         email:
           type: string
           format: email
+        nickname:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
         created_at:
           type: string
           format: date-time

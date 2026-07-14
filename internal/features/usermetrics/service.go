@@ -10,6 +10,7 @@ import (
 
 type WorkoutService interface {
 	ListWorkouts(ctx context.Context, userID string) ([]workout.WorkoutDetail, error)
+	CountCompletedSessions(ctx context.Context, userID string, from, to time.Time) (int, error)
 }
 
 type TaskService interface {
@@ -18,6 +19,7 @@ type TaskService interface {
 
 type Service interface {
 	GetTodayMissions(ctx context.Context, userID string) (*TodayMissionsResponse, error)
+	GetWeeklySummary(ctx context.Context, userID string) (*WeeklySummaryResponse, error)
 }
 
 type service struct {
@@ -91,13 +93,31 @@ func scheduledWorkoutsForDay(workouts []workout.WorkoutDetail, day time.Time) []
 			continue
 		}
 		items = append(items, WorkoutMission{
-			ID:          w.ID,
-			Name:        w.Name,
-			Description: w.Description,
-			IsCompleted: w.DoneToday,
+			ID:                   w.ID,
+			Name:                 w.Name,
+			Description:          w.Description,
+			IsCompleted:          w.DoneToday,
+			ExerciseCount:        len(w.Exercises),
+			EstimatedDurationMin: estimateDurationMin(w.Exercises),
 		})
 	}
 	return items
+}
+
+// estimateDurationMin computes an estimated workout length in minutes.
+// Per-set: 1 min execution + 1 min rest. Time-typed exercises use their
+// duration (in seconds) per set.
+// ponytail: no transition time between exercises; refine if estimates drift.
+func estimateDurationMin(exercises []workout.WorkoutExercise) int {
+	totalSeconds := 0
+	for _, ex := range exercises {
+		if ex.Exercise != nil && ex.Exercise.Type == workout.ExerciseTypeTime && ex.Duration != nil {
+			totalSeconds += *ex.Duration * ex.Sets
+			continue
+		}
+		totalSeconds += ex.Sets * 120 // 2 min per set (1 exec + 1 rest)
+	}
+	return (totalSeconds + 30) / 60 // round to nearest minute
 }
 
 func hasWorkoutDay(days workout.DaySlice, target workout.DayOfWeek) bool {
@@ -148,6 +168,45 @@ func buildProgressForTasks(items []TaskMission) Progress {
 	}
 	progress.Pending = progress.Total - progress.Completed
 	return progress
+}
+
+func (s *service) GetWeeklySummary(ctx context.Context, userID string) (*WeeklySummaryResponse, error) {
+	now := dateOnly(s.now())
+	from, to := currentWeekRange(now)
+
+	workouts, err := s.workoutSvc.ListWorkouts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Every active workout's days_of_week falls within the current week
+	// (seg-dom) by definition, so scheduled is the sum of scheduled days.
+	scheduled := 0
+	for _, w := range workouts {
+		if w.Active {
+			scheduled += len(w.DaysOfWeek)
+		}
+	}
+
+	completed, err := s.workoutSvc.CountCompletedSessions(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	return &WeeklySummaryResponse{
+		Goal: WeeklyGoal{Completed: completed, Scheduled: scheduled},
+	}, nil
+}
+
+// currentWeekRange returns the Monday..Sunday range containing `now`.
+func currentWeekRange(now time.Time) (time.Time, time.Time) {
+	daysSinceMonday := int(now.Weekday()) - int(time.Monday)
+	if daysSinceMonday < 0 {
+		daysSinceMonday += 7
+	}
+	from := now.AddDate(0, 0, -daysSinceMonday)
+	to := from.AddDate(0, 0, 6)
+	return from, to
 }
 
 func dateOnly(t time.Time) time.Time {

@@ -114,6 +114,7 @@ func (s *service) GetGroupDetail(ctx context.Context, groupID, userID string) (*
 	detail := &GroupDetail{Group: *g, MemberCnt: count}
 	if len(ranking) > 0 {
 		detail.TopScore = ranking[0].Points // ordered by points desc
+		detail.TopName = ranking[0].Name
 	}
 	for _, e := range ranking {
 		if e.UserID == userID {

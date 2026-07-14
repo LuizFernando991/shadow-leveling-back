@@ -62,7 +62,7 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 	}
 
 	cfg := buildConfig()
-	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{}, FakeVerifier{})
+	authModule := auth.NewModule(db, cfg.Auth, email.NewNoopSender(), cache.NoopRateLimiter{}, FakeVerifier{}, storage.NewNoopUploader())
 	taskModule := task.NewModule(db)
 	userMetricsModule := usermetrics.NewModule(db)
 	levelingModule := leveling.NewModule(db)

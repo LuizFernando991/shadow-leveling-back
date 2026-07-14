@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -19,6 +20,13 @@ const (
 	codeSendHourlyLimit = 10
 	codeVerifyLimit     = 5
 	codeVerifyWindow    = 10 * time.Minute
+)
+
+// Avatar upload limits (mirrors the group cover upload).
+const (
+	maxAvatarBytes   = 5 << 20 // 5 MiB
+	uploadRateLimit  = 10
+	uploadRateWindow = time.Minute
 )
 
 type Handler struct {
@@ -40,6 +48,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	private.Use(authMiddleware)
 	private.HandleFunc("/me", h.me).Methods(http.MethodGet)
 	private.HandleFunc("/me", h.updateProfile).Methods(http.MethodPatch)
+	private.HandleFunc("/me/avatar", h.updateAvatar).Methods(http.MethodPatch)
 	private.HandleFunc("/logout", h.logout).Methods(http.MethodPost)
 	private.HandleFunc("/sessions", h.listSessions).Methods(http.MethodGet)
 	private.HandleFunc("/sessions/{id}", h.revokeSession).Methods(http.MethodDelete)
@@ -134,12 +143,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	httputil.JSON(w, http.StatusOK, UserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Nickname:  user.Nickname,
-		CreatedAt: user.CreatedAt,
-	})
+	httputil.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
 func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
@@ -158,12 +162,32 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	httputil.JSON(w, http.StatusOK, UserResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Nickname:  user.Nickname,
-		CreatedAt: user.CreatedAt,
-	})
+	httputil.JSON(w, http.StatusOK, newUserResponse(user))
+}
+
+func (h *Handler) updateAvatar(w http.ResponseWriter, r *http.Request) {
+	if !httputil.EnforceUserRateLimit(w, r, h.limiter, "upload", uploadRateLimit, uploadRateWindow) {
+		return
+	}
+	session := httputil.SessionFromContext(r.Context())
+
+	file, contentType, ok := httputil.ReadImageUpload(w, r, maxAvatarBytes)
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	user, err := h.svc.UpdateAvatar(r.Context(), session.UserID, contentType, file)
+	if errors.Is(err, ErrUnsupportedImage) {
+		httputil.Error(w, http.StatusBadRequest, "unsupported image type (use jpeg or png)")
+		return
+	}
+	if err != nil {
+		slog.Error("auth: update avatar", "error", err)
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +238,6 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
 
 func clientIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
