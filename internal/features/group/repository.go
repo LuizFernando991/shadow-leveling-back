@@ -3,6 +3,7 @@ package group
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -21,7 +22,7 @@ type Repository interface {
 	CreateGroup(ctx context.Context, name, inviteCode, ownerID string) (*Group, error)
 	GetGroup(ctx context.Context, id string) (*Group, error)
 	GroupByInviteCode(ctx context.Context, code string) (*Group, error)
-	ListUserGroups(ctx context.Context, userID string) ([]Group, error)
+	ListUserGroups(ctx context.Context, userID string) ([]GroupListItem, error)
 	AddMember(ctx context.Context, groupID, userID string, role Role) error
 	RemoveMember(ctx context.Context, groupID, userID string) error
 	IsMember(ctx context.Context, groupID, userID string) (bool, error)
@@ -92,9 +93,15 @@ func (r *postgresRepository) GroupByInviteCode(ctx context.Context, code string)
 	return &g, nil
 }
 
-func (r *postgresRepository) ListUserGroups(ctx context.Context, userID string) ([]Group, error) {
+func (r *postgresRepository) ListUserGroups(ctx context.Context, userID string) ([]GroupListItem, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT `+groupColsG+`
+		`SELECT `+groupColsG+`,
+		        (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count,
+		        COALESCE((SELECT json_agg(a.avatar_url) FROM (
+		            SELECT u.avatar_url FROM group_members m2
+		            JOIN users u ON u.id = m2.user_id
+		            WHERE m2.group_id = g.id AND u.avatar_url IS NOT NULL
+		            ORDER BY m2.joined_at LIMIT 3) a), '[]') AS member_avatars
 		   FROM groups g
 		   JOIN group_members gm ON gm.group_id = g.id
 		  WHERE gm.user_id = $1
@@ -104,15 +111,20 @@ func (r *postgresRepository) ListUserGroups(ctx context.Context, userID string) 
 	}
 	defer rows.Close()
 
-	groups := []Group{}
+	items := []GroupListItem{}
 	for rows.Next() {
-		var g Group
-		if err := scanGroup(rows, &g); err != nil {
+		var it GroupListItem
+		var avatarsJSON []byte
+		if err := rows.Scan(&it.ID, &it.Name, &it.CoverURL, &it.InviteCode, &it.OwnerID, &it.CreatedAt,
+			&it.MemberCount, &avatarsJSON); err != nil {
 			return nil, fmt.Errorf("group: scan group: %w", err)
 		}
-		groups = append(groups, g)
+		if err := json.Unmarshal(avatarsJSON, &it.MemberAvatars); err != nil {
+			return nil, fmt.Errorf("group: unmarshal avatars: %w", err)
+		}
+		items = append(items, it)
 	}
-	return groups, rows.Err()
+	return items, rows.Err()
 }
 
 func (r *postgresRepository) AddMember(ctx context.Context, groupID, userID string, role Role) error {
@@ -171,6 +183,7 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT gm.user_id,
 		        COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
+		        u.avatar_url,
 		        COUNT(DISTINCT ws.date) AS points
 		   FROM group_members gm
 		   JOIN users u ON u.id = gm.user_id
@@ -180,7 +193,7 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 		       AND ws.status = 'complete'
 		       AND ws.date BETWEEN $2 AND $3
 		  WHERE gm.group_id = $1
-		  GROUP BY gm.user_id, u.nickname, u.email
+		  GROUP BY gm.user_id, u.nickname, u.email, u.avatar_url
 		  ORDER BY points DESC, name ASC`,
 		groupID, from, to)
 	if err != nil {
@@ -191,7 +204,7 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 	entries := []RankingEntry{}
 	for rows.Next() {
 		var e RankingEntry
-		if err := rows.Scan(&e.UserID, &e.Name, &e.Points); err != nil {
+		if err := rows.Scan(&e.UserID, &e.Name, &e.AvatarURL, &e.Points); err != nil {
 			return nil, fmt.Errorf("group: scan ranking: %w", err)
 		}
 		entries = append(entries, e)

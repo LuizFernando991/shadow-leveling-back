@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/infra/storage"
+	"github.com/LuizFernando991/gym-api/internal/shared/apptime"
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
 )
 
@@ -32,7 +33,7 @@ const (
 type Service interface {
 	CreateGroup(ctx context.Context, ownerID string, req CreateGroupRequest) (*Group, error)
 	JoinGroup(ctx context.Context, userID string, req JoinGroupRequest) (*Group, error)
-	ListGroups(ctx context.Context, userID string) ([]Group, error)
+	ListGroups(ctx context.Context, userID string) ([]GroupListItem, error)
 	GetGroupDetail(ctx context.Context, groupID, userID string) (*GroupDetail, error)
 	LeaveGroup(ctx context.Context, groupID, userID string) error
 	Ranking(ctx context.Context, groupID, userID string) ([]RankingEntry, error)
@@ -43,15 +44,10 @@ type Service interface {
 type service struct {
 	repo     Repository
 	uploader storage.Uploader
-	loc      *time.Location
 }
 
 func NewService(repo Repository, uploader storage.Uploader) Service {
-	loc, err := time.LoadLocation("America/Sao_Paulo")
-	if err != nil {
-		loc = time.UTC
-	}
-	return &service{repo: repo, uploader: uploader, loc: loc}
+	return &service{repo: repo, uploader: uploader}
 }
 
 func (s *service) CreateGroup(ctx context.Context, ownerID string, req CreateGroupRequest) (*Group, error) {
@@ -91,7 +87,7 @@ func (s *service) JoinGroup(ctx context.Context, userID string, req JoinGroupReq
 	return g, nil
 }
 
-func (s *service) ListGroups(ctx context.Context, userID string) ([]Group, error) {
+func (s *service) ListGroups(ctx context.Context, userID string) ([]GroupListItem, error) {
 	return s.repo.ListUserGroups(ctx, userID)
 }
 
@@ -101,7 +97,7 @@ func (s *service) GetGroupDetail(ctx context.Context, groupID, userID string) (*
 		return nil, err
 	}
 
-	from, to := weekBounds(time.Now(), s.loc)
+	from, to := weekBounds(time.Now(), apptime.Location)
 	ranking, err := s.repo.WeeklyPoints(ctx, groupID, from, to)
 	if err != nil {
 		return nil, err
@@ -115,6 +111,7 @@ func (s *service) GetGroupDetail(ctx context.Context, groupID, userID string) (*
 	if len(ranking) > 0 {
 		detail.TopScore = ranking[0].Points // ordered by points desc
 		detail.TopName = ranking[0].Name
+		detail.TopAvatarURL = ranking[0].AvatarURL
 	}
 	for _, e := range ranking {
 		if e.UserID == userID {
@@ -136,7 +133,7 @@ func (s *service) Ranking(ctx context.Context, groupID, userID string) ([]Rankin
 	if _, err := s.memberGroup(ctx, groupID, userID); err != nil {
 		return nil, err
 	}
-	from, to := weekBounds(time.Now(), s.loc)
+	from, to := weekBounds(time.Now(), apptime.Location)
 	return s.repo.WeeklyPoints(ctx, groupID, from, to)
 }
 

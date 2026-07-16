@@ -524,7 +524,7 @@ func (r *fakeRepository) GetWorkoutWithExercises(ctx context.Context, id string)
 	return &Workout{ID: id}, r.workoutExercises, nil
 }
 
-func (r *fakeRepository) ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error) {
+func (r *fakeRepository) ListWorkouts(ctx context.Context, userID string, today time.Time) ([]WorkoutDetail, error) {
 	if r.listWorkoutsErr != nil {
 		return nil, r.listWorkoutsErr
 	}

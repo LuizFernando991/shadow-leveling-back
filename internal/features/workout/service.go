@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/LuizFernando991/gym-api/internal/infra/storage"
+	"github.com/LuizFernando991/gym-api/internal/shared/apptime"
 	"github.com/LuizFernando991/gym-api/internal/shared/entities"
 )
 
@@ -79,6 +80,14 @@ type service struct {
 
 func NewService(repo Repository, xp XPAwarder, uploader storage.Uploader, notifier GroupNotifier) Service {
 	return &service{repo: repo, xp: xp, uploader: uploader, notifier: notifier}
+}
+
+// todayParam returns noon UTC of the current calendar day in the app timezone.
+// Passed to `::date` casts so "done today" lands on the user's local day
+// regardless of the DB session timezone — matching how the client dates sessions.
+func todayParam() time.Time {
+	n := time.Now().In(apptime.Location)
+	return time.Date(n.Year(), n.Month(), n.Day(), 12, 0, 0, 0, time.UTC)
 }
 
 func isNotFound(err error) bool {
@@ -195,7 +204,7 @@ func (s *service) GetWorkout(ctx context.Context, id, userID string) (*WorkoutDe
 		exercises = []WorkoutExercise{}
 	}
 
-	doneToday, err := s.repo.HasCompletedSessionOnDate(ctx, id, time.Now())
+	doneToday, err := s.repo.HasCompletedSessionOnDate(ctx, id, todayParam())
 	if err != nil {
 		return nil, fmt.Errorf("workout: check completed session for today: %w", err)
 	}
@@ -204,7 +213,7 @@ func (s *service) GetWorkout(ctx context.Context, id, userID string) (*WorkoutDe
 }
 
 func (s *service) ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error) {
-	workouts, err := s.repo.ListWorkouts(ctx, userID)
+	workouts, err := s.repo.ListWorkouts(ctx, userID, todayParam())
 	if err != nil {
 		return nil, fmt.Errorf("workout: list workouts: %w", err)
 	}

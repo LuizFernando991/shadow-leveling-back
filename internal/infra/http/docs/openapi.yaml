@@ -1173,7 +1173,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Group'
+                  $ref: '#/components/schemas/GroupListItem'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -2138,6 +2138,19 @@ components:
           type: string
           format: date-time
 
+    GroupListItem:
+      allOf:
+        - $ref: '#/components/schemas/Group'
+        - type: object
+          properties:
+            member_count:
+              type: integer
+            member_avatars:
+              type: array
+              items:
+                type: string
+              description: Up to 3 member avatar URLs for the list avatar stack.
+
     GroupDetail:
       allOf:
         - $ref: '#/components/schemas/Group'
@@ -2145,6 +2158,11 @@ components:
           properties:
             top_score:
               type: integer
+            top_name:
+              type: string
+            top_avatar_url:
+              type: string
+              nullable: true
             my_score:
               type: integer
             member_count:
@@ -2158,6 +2176,9 @@ components:
           format: uuid
         name:
           type: string
+        avatar_url:
+          type: string
+          nullable: true
         points:
           type: integer
 

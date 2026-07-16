@@ -16,7 +16,7 @@ type Repository interface {
 	CreateWorkout(ctx context.Context, userID, name string, description *string, days DaySlice) (*Workout, error)
 	GetWorkout(ctx context.Context, id string) (*Workout, error)
 	GetWorkoutWithExercises(ctx context.Context, id string) (*Workout, []WorkoutExercise, error)
-	ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error)
+	ListWorkouts(ctx context.Context, userID string, today time.Time) ([]WorkoutDetail, error)
 	HasCompletedSessionOnDate(ctx context.Context, workoutID string, date time.Time) (bool, error)
 	UpdateWorkout(ctx context.Context, id, name string, description *string, days DaySlice, active bool) (*Workout, error)
 	DeleteWorkout(ctx context.Context, id string) error
@@ -199,20 +199,20 @@ func (r *postgresRepository) GetWorkoutWithExercises(ctx context.Context, id str
 	return w, exercises, nil
 }
 
-func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string) ([]WorkoutDetail, error) {
+func (r *postgresRepository) ListWorkouts(ctx context.Context, userID string, today time.Time) ([]WorkoutDetail, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT `+workoutCols+`,
 		        EXISTS (
 		            SELECT 1
 		            FROM workout_sessions ws
 		            WHERE ws.workout_id = workouts.id
-		              AND ws.date = CURRENT_DATE
+		              AND ws.date = $2::date
 		              AND ws.status = 'complete'
 		        ) AS done_today
 		 FROM workouts
 		 WHERE user_id = $1
 		 ORDER BY created_at DESC`,
-		userID,
+		userID, today,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("workout: list workouts: %w", err)

@@ -1166,7 +1166,24 @@ POST /groups/join
 GET /groups
 ```
 
-Retorna um array de grupos dos quais o usuário participa.
+Retorna um array de grupos dos quais o usuário participa. Cada item traz também
+`member_count` (total de membros) e `member_avatars` (até 3 URLs de avatar de
+membros, para a pilha de avatares na lista):
+
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Botinhas",
+    "cover_url": null,
+    "invite_code": "SX3KWR",
+    "owner_id": "uuid",
+    "created_at": "2026-07-10T12:00:00Z",
+    "member_count": 6,
+    "member_avatars": ["https://.../a.jpg", "https://.../b.jpg"]
+  }
+]
+```
 
 ## 8.4 Detalhe do Grupo (header)
 

@@ -22,20 +22,30 @@ type Group struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// GroupListItem is a group as shown in the user's groups list: identity plus a
+// member count and a few member avatar URLs for the avatar stack.
+type GroupListItem struct {
+	Group
+	MemberCount   int      `json:"member_count"`
+	MemberAvatars []string `json:"member_avatars"` // up to 3, non-null URLs
+}
+
 // GroupDetail is the group page header: identity plus the week's headline scores.
 type GroupDetail struct {
 	Group
-	TopScore  int    `json:"top_score"` // points of the 1st place this week
-	TopName   string `json:"top_name"`  // name of the 1st place this week
-	MyScore   int    `json:"my_score"`  // logged-in user's points this week
-	MemberCnt int    `json:"member_count"`
+	TopScore     int     `json:"top_score"`      // points of the 1st place this week
+	TopName      string  `json:"top_name"`       // name of the 1st place this week
+	TopAvatarURL *string `json:"top_avatar_url"` // avatar of the 1st place this week
+	MyScore      int     `json:"my_score"`       // logged-in user's points this week
+	MemberCnt    int     `json:"member_count"`
 }
 
 // RankingEntry is one member's weekly standing.
 type RankingEntry struct {
-	UserID string `json:"user_id"`
-	Name   string `json:"name"`
-	Points int    `json:"points"`
+	UserID    string  `json:"user_id"`
+	Name      string  `json:"name"`
+	AvatarURL *string `json:"avatar_url"`
+	Points    int     `json:"points"`
 }
 
 // FeedItem is one completed workout shown in the group feed.
