@@ -13,6 +13,8 @@ type Repository interface {
 	IsFirstCompletionOfDay(ctx context.Context, userID string, date time.Time) (bool, error)
 	CoMemberTokens(ctx context.Context, actorUserID string) ([]string, error)
 	ActorName(ctx context.Context, userID string) (string, error)
+	SessionOwner(ctx context.Context, sessionID string) (string, error)
+	TokensForUser(ctx context.Context, userID string) ([]string, error)
 }
 
 type postgresRepository struct {
@@ -76,6 +78,41 @@ func (r *postgresRepository) CoMemberTokens(ctx context.Context, actorUserID str
 		actorUserID)
 	if err != nil {
 		return nil, fmt.Errorf("notification: co-member tokens: %w", err)
+	}
+	defer rows.Close()
+
+	tokens := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, fmt.Errorf("notification: scan token: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+// SessionOwner returns the user id that owns the workout behind a session.
+func (r *postgresRepository) SessionOwner(ctx context.Context, sessionID string) (string, error) {
+	var ownerID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT w.user_id
+		   FROM workout_sessions ws
+		   JOIN workouts w ON w.id = ws.workout_id
+		  WHERE ws.id = $1`,
+		sessionID).Scan(&ownerID)
+	if err != nil {
+		return "", fmt.Errorf("notification: session owner: %w", err)
+	}
+	return ownerID, nil
+}
+
+// TokensForUser returns every push token registered for a single user.
+func (r *postgresRepository) TokensForUser(ctx context.Context, userID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT token FROM push_tokens WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("notification: tokens for user: %w", err)
 	}
 	defer rows.Close()
 

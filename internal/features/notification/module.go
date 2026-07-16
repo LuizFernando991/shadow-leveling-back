@@ -10,10 +10,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Notifier is the interface workout uses to trigger a "someone trained" push
-// without importing this package directly (mirrors leveling.Awarder).
+// Notifier is the interface other features use to trigger push notifications
+// without importing this package directly (mirrors leveling.Awarder). Its method
+// set is a superset of workout.GroupNotifier and group.Notifier.
 type Notifier interface {
 	NotifyWorkoutCompleted(ctx context.Context, userID string, sessionDate time.Time)
+	NotifySessionReaction(ctx context.Context, actorID, sessionID string)
+	NotifySessionComment(ctx context.Context, actorID, sessionID string)
 }
 
 type Module struct {

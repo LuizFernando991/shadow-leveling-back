@@ -29,6 +29,12 @@ const (
 	uploadRateWindow = time.Minute
 )
 
+// Anti-abuse: cap avatar changes per user per day (on top of the upload burst).
+const (
+	avatarDailyLimit  = 3
+	avatarDailyWindow = 24 * time.Hour
+)
+
 type Handler struct {
 	svc     Service
 	limiter httputil.RateAllower
@@ -167,6 +173,9 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) updateAvatar(w http.ResponseWriter, r *http.Request) {
 	if !httputil.EnforceUserRateLimit(w, r, h.limiter, "upload", uploadRateLimit, uploadRateWindow) {
+		return
+	}
+	if !httputil.EnforceUserRateLimit(w, r, h.limiter, "avatar-daily", avatarDailyLimit, avatarDailyWindow) {
 		return
 	}
 	session := httputil.SessionFromContext(r.Context())

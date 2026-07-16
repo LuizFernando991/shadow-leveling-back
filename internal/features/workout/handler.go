@@ -18,6 +18,20 @@ const (
 	uploadRateWindow = time.Minute
 )
 
+// Anti-farm: cap XP-awarding session completions per user per day.
+// Each POST /workout-sessions with status=complete mints a new session (fresh
+// 50 XP past the per-session idempotency guard), so uncapped this is an XP farm.
+const (
+	sessionCompleteLimit  = 10
+	sessionCompleteWindow = 24 * time.Hour
+)
+
+// Anti-abuse: cap photo changes per session per day (on top of the upload burst).
+const (
+	sessionPhotoLimit  = 3
+	sessionPhotoWindow = 24 * time.Hour
+)
+
 type Handler struct {
 	svc Service
 	rl  httputil.RateAllower
@@ -416,6 +430,10 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.Status == StatusComplete &&
+		!httputil.EnforceUserRateLimit(w, r, h.rl, "session-complete", sessionCompleteLimit, sessionCompleteWindow) {
+		return
+	}
 	sess, err := h.svc.CreateSession(r.Context(), userID, req)
 	if errors.Is(err, ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "workout not found")
@@ -463,6 +481,10 @@ func (h *Handler) updateSession(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.Status != nil && *req.Status == StatusComplete &&
+		!httputil.EnforceUserRateLimit(w, r, h.rl, "session-complete", sessionCompleteLimit, sessionCompleteWindow) {
+		return
+	}
 	sess, err := h.svc.UpdateSession(r.Context(), id, userID, req)
 	if errors.Is(err, ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "session not found")
@@ -487,6 +509,10 @@ func (h *Handler) attachSessionPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := httputil.SessionFromContext(r.Context()).UserID
 	id := mux.Vars(r)["id"]
+
+	if !httputil.EnforceRateLimit(w, r, h.rl, "session-photo:"+id, sessionPhotoLimit, sessionPhotoWindow) {
+		return
+	}
 
 	file, contentType, ok := httputil.ReadImageUpload(w, r, maxPhotoBytes)
 	if !ok {

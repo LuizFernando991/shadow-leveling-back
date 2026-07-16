@@ -55,7 +55,7 @@ func main() {
 		UserMetrics:  usermetrics.NewModule(db),
 		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),
 		Leveling:     levelingModule,
-		Group:        group.NewModule(db, uploader, rateLimiter),
+		Group:        group.NewModule(db, uploader, rateLimiter, notificationModule.Notifier()),
 		Notification: notificationModule,
 	}
 

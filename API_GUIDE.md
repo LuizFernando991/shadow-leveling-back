@@ -1228,7 +1228,7 @@ Membros ordenados por pontos da semana (desc). `name` = nickname (ou email).
 GET /groups/{id}/feed?cursor=&limit=
 ```
 
-Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (limit 1–100, padrão 20). O `created_at` é o horário do registro; o front agrupa por dia (Today/Yesterday). `photo_url` pode ser `null` (usar placeholder).
+Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (limit 1–100, padrão 20). O `created_at` é o horário do registro; o front agrupa por dia (Today/Yesterday). `photo_url` pode ser `null` (usar placeholder). `reaction_count`/`comment_count` são contadores **daquele grupo**; `my_reaction` é o emoji do usuário logado nessa sessão (ou `null`); `top_emoji` é o emoji mais usado na sessão (empate: o que apareceu primeiro), ou `null` se não houver reações.
 
 ```json
 {
@@ -1239,14 +1239,87 @@ Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (l
       "name": "Sung",
       "workout_name": "Leg day",
       "photo_url": "https://.../photo.jpg",
-      "created_at": "2026-07-10T12:00:00Z"
+      "created_at": "2026-07-10T12:00:00Z",
+      "reaction_count": 4,
+      "comment_count": 2,
+      "my_reaction": "🔥",
+      "top_emoji": "🔥"
     }
   ],
   "cursor": { "next_cursor": "base64", "has_more": true }
 }
 ```
 
-## 8.7 Definir Capa do Grupo (owner)
+## 8.7 Detalhe da Sessão no Grupo (post social)
+
+```
+GET /groups/{id}/sessions/{sessionId}
+```
+
+Post de um treino visto dentro do grupo. Requer membro do grupo (`403`); a sessão precisa ser `complete` e do autor que é membro do grupo, senão `404`. `reactions` é a agregação por emoji (desc); `my_reaction` é o emoji do usuário logado (ou `null`).
+
+```json
+{
+  "session_id": "uuid",
+  "user_id": "uuid",
+  "name": "Rafael Moraes",
+  "avatar_url": "https://.../avatar.jpg",
+  "workout_name": "Ascensão do Monarca — Pernas",
+  "photo_url": "https://.../photo.jpg",
+  "created_at": "2026-07-10T12:00:00Z",
+  "reactions": [ { "emoji": "🔥", "count": 4 }, { "emoji": "💪", "count": 2 } ],
+  "my_reaction": "🔥",
+  "comment_count": 2
+}
+```
+
+## 8.8 Reagir / Remover Reação
+
+Emoji livre, **uma reação por usuário por sessão** (dentro do grupo). Reenviar o mesmo emoji remove (toggle). Ambos retornam o **detalhe atualizado** (mesmo shape de 8.7). Notifica o autor (push) quando uma reação é aplicada (não na remoção nem na própria sessão).
+
+```
+PUT    /groups/{id}/sessions/{sessionId}/reaction     body: { "emoji": "🔥" }
+DELETE /groups/{id}/sessions/{sessionId}/reaction
+```
+
+## 8.9 Comentários
+
+```
+GET  /groups/{id}/sessions/{sessionId}/comments?cursor=&limit=
+```
+
+Comentários mais recentes primeiro, paginados por cursor (limit 1–100, padrão 20). `is_mine` marca os do usuário logado.
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "user_id": "uuid",
+      "name": "Bruna Lima",
+      "avatar_url": "https://.../avatar.jpg",
+      "body": "Monstro! 🔥",
+      "created_at": "2026-07-10T13:00:00Z",
+      "is_mine": false
+    }
+  ],
+  "cursor": { "next_cursor": "base64", "has_more": true }
+}
+```
+
+**Criar** (`201`, retorna o comentário criado; notifica o autor da sessão):
+
+```
+POST /groups/{id}/sessions/{sessionId}/comments      body: { "body": "texto (1..500)" }
+```
+
+**Remover** o próprio comentário (`204`; `403` se não for seu):
+
+```
+DELETE /groups/{id}/sessions/{sessionId}/comments/{commentId}
+```
+
+## 8.10 Definir Capa do Grupo (owner)
 
 ```
 PATCH /groups/{id}/cover
@@ -1254,7 +1327,7 @@ PATCH /groups/{id}/cover
 
 **multipart/form-data** com o campo `image` (jpeg/png, máx 5MB). Apenas o `owner` (`403` caso contrário). Retorna o grupo com `cover_url` preenchido.
 
-## 8.8 Sair do Grupo
+## 8.11 Sair do Grupo
 
 ```
 DELETE /groups/{id}/leave
@@ -1262,7 +1335,7 @@ DELETE /groups/{id}/leave
 
 `204 No Content`.
 
-## 8.9 Push Notifications (tokens)
+## 8.12 Push Notifications (tokens)
 
 > Quando um membro registra o **primeiro treino do dia**, os demais membros dos grupos dele recebem um push ("Fulano treinou 💪"). O app registra o token do device aqui.
 
@@ -1369,6 +1442,12 @@ Retorna a especificação OpenAPI 3.0 em YAML.
 | `GET`    | `/groups/{id}`                        | sim  | Detalhe (header + scores)      |
 | `GET`    | `/groups/{id}/ranking`                | sim  | Ranking semanal                |
 | `GET`    | `/groups/{id}/feed`                   | sim  | Feed do grupo (cursor)         |
+| `GET`    | `/groups/{id}/sessions/{sid}`         | sim  | Detalhe da sessão (post social)|
+| `PUT`    | `/groups/{id}/sessions/{sid}/reaction`| sim  | Reagir (emoji, toggle)         |
+| `DELETE` | `/groups/{id}/sessions/{sid}/reaction`| sim  | Remover reação                 |
+| `GET`    | `/groups/{id}/sessions/{sid}/comments`| sim  | Listar comentários (cursor)    |
+| `POST`   | `/groups/{id}/sessions/{sid}/comments`| sim  | Comentar                       |
+| `DELETE` | `/groups/{id}/sessions/{sid}/comments/{cid}` | sim | Remover próprio comentário |
 | `PATCH`  | `/groups/{id}/cover`                  | sim  | Definir capa (multipart, owner)|
 | `DELETE` | `/groups/{id}/leave`                  | sim  | Sair do grupo                  |
 | `POST`   | `/me/push-token`                      | sim  | Registrar token de push        |

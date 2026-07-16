@@ -29,7 +29,21 @@ type Repository interface {
 	CountMembers(ctx context.Context, groupID string) (int, error)
 	SetCover(ctx context.Context, groupID, coverURL string) error
 	WeeklyPoints(ctx context.Context, groupID string, from, to time.Time) ([]RankingEntry, error)
-	Feed(ctx context.Context, groupID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error)
+	Feed(ctx context.Context, groupID, userID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error)
+
+	// SessionInGroup loads a completed session's post header, but only if its
+	// author belongs to the group. Returns sql.ErrNoRows otherwise.
+	SessionInGroup(ctx context.Context, sessionID, groupID string) (*SessionDetail, error)
+	ReactionSummary(ctx context.Context, sessionID, groupID string) ([]ReactionCount, error)
+	MyReaction(ctx context.Context, sessionID, groupID, userID string) (*string, error)
+	SetReaction(ctx context.Context, sessionID, groupID, userID, emoji string) error
+	DeleteReaction(ctx context.Context, sessionID, groupID, userID string) error
+	CountComments(ctx context.Context, sessionID, groupID string) (int, error)
+	ListComments(ctx context.Context, sessionID, groupID, userID string, limit int, afterTime *time.Time, afterID *string) ([]CommentItem, error)
+	AddComment(ctx context.Context, sessionID, groupID, userID, body string) (*CommentItem, error)
+	// DeleteComment removes the comment only when it belongs to userID within the
+	// group. Returns false if nothing matched (missing or not the author).
+	DeleteComment(ctx context.Context, commentID, groupID, userID string) (bool, error)
 }
 
 type postgresRepository struct {
@@ -213,20 +227,26 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 }
 
 // Feed returns completed sessions of the group's members, newest first, using
-// keyset pagination on (created_at, id).
-func (r *postgresRepository) Feed(ctx context.Context, groupID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error) {
+// keyset pagination on (created_at, id). Each item carries this group's social
+// counts and the viewer's own reaction.
+func (r *postgresRepository) Feed(ctx context.Context, groupID, userID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT ws.id, w.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
-		        w.name AS workout_name, ws.photo_url, ws.created_at
+		        w.name AS workout_name, ws.photo_url, ws.created_at,
+		        (SELECT COUNT(*) FROM session_reactions sr WHERE sr.session_id = ws.id AND sr.group_id = $1) AS reaction_count,
+		        (SELECT COUNT(*) FROM session_comments  sc WHERE sc.session_id = ws.id AND sc.group_id = $1) AS comment_count,
+		        (SELECT sr.emoji FROM session_reactions sr WHERE sr.session_id = ws.id AND sr.group_id = $1 AND sr.user_id = $2) AS my_reaction,
+		        (SELECT sr.emoji FROM session_reactions sr WHERE sr.session_id = ws.id AND sr.group_id = $1
+		           GROUP BY sr.emoji ORDER BY COUNT(*) DESC, MIN(sr.created_at) ASC LIMIT 1) AS top_emoji
 		   FROM workout_sessions ws
 		   JOIN workouts w ON w.id = ws.workout_id
 		   JOIN users u ON u.id = w.user_id
 		   JOIN group_members gm ON gm.user_id = w.user_id AND gm.group_id = $1
 		  WHERE ws.status = 'complete'
-		    AND ($2::timestamptz IS NULL OR (ws.created_at, ws.id) < ($2, $3))
+		    AND ($3::timestamptz IS NULL OR (ws.created_at, ws.id) < ($3, $4))
 		  ORDER BY ws.created_at DESC, ws.id DESC
-		  LIMIT $4`,
-		groupID, afterTime, afterID, limit)
+		  LIMIT $5`,
+		groupID, userID, afterTime, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("group: feed: %w", err)
 	}
@@ -235,10 +255,165 @@ func (r *postgresRepository) Feed(ctx context.Context, groupID string, limit int
 	items := []FeedItem{}
 	for rows.Next() {
 		var it FeedItem
-		if err := rows.Scan(&it.SessionID, &it.UserID, &it.Name, &it.WorkoutName, &it.PhotoURL, &it.CreatedAt); err != nil {
+		if err := rows.Scan(&it.SessionID, &it.UserID, &it.Name, &it.WorkoutName, &it.PhotoURL, &it.CreatedAt,
+			&it.ReactionCount, &it.CommentCount, &it.MyReaction, &it.TopEmoji); err != nil {
 			return nil, fmt.Errorf("group: scan feed: %w", err)
 		}
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+// SessionInGroup returns the post header for a session whose author is a member
+// of the group. Returns sql.ErrNoRows if the session is not completed or its
+// author is not in the group.
+func (r *postgresRepository) SessionInGroup(ctx context.Context, sessionID, groupID string) (*SessionDetail, error) {
+	var d SessionDetail
+	err := r.db.QueryRowContext(ctx,
+		`SELECT ws.id, w.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
+		        u.avatar_url, w.name AS workout_name, ws.photo_url, ws.created_at
+		   FROM workout_sessions ws
+		   JOIN workouts w ON w.id = ws.workout_id
+		   JOIN users u ON u.id = w.user_id
+		   JOIN group_members gm ON gm.user_id = w.user_id AND gm.group_id = $2
+		  WHERE ws.id = $1 AND ws.status = 'complete'`,
+		sessionID, groupID).Scan(&d.SessionID, &d.UserID, &d.Name, &d.AvatarURL, &d.WorkoutName, &d.PhotoURL, &d.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (r *postgresRepository) ReactionSummary(ctx context.Context, sessionID, groupID string) ([]ReactionCount, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT emoji, COUNT(*) AS n
+		   FROM session_reactions
+		  WHERE session_id = $1 AND group_id = $2
+		  GROUP BY emoji
+		  ORDER BY n DESC, emoji ASC`,
+		sessionID, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("group: reaction summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ReactionCount{}
+	for rows.Next() {
+		var rc ReactionCount
+		if err := rows.Scan(&rc.Emoji, &rc.Count); err != nil {
+			return nil, fmt.Errorf("group: scan reaction: %w", err)
+		}
+		out = append(out, rc)
+	}
+	return out, rows.Err()
+}
+
+func (r *postgresRepository) MyReaction(ctx context.Context, sessionID, groupID, userID string) (*string, error) {
+	var emoji *string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT emoji FROM session_reactions WHERE session_id = $1 AND group_id = $2 AND user_id = $3`,
+		sessionID, groupID, userID).Scan(&emoji)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("group: my reaction: %w", err)
+	}
+	return emoji, nil
+}
+
+func (r *postgresRepository) SetReaction(ctx context.Context, sessionID, groupID, userID, emoji string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO session_reactions (session_id, group_id, user_id, emoji)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (session_id, group_id, user_id)
+		     DO UPDATE SET emoji = EXCLUDED.emoji, created_at = NOW()`,
+		sessionID, groupID, userID, emoji)
+	if err != nil {
+		return fmt.Errorf("group: set reaction: %w", err)
+	}
+	return nil
+}
+
+func (r *postgresRepository) DeleteReaction(ctx context.Context, sessionID, groupID, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM session_reactions WHERE session_id = $1 AND group_id = $2 AND user_id = $3`,
+		sessionID, groupID, userID)
+	if err != nil {
+		return fmt.Errorf("group: delete reaction: %w", err)
+	}
+	return nil
+}
+
+func (r *postgresRepository) CountComments(ctx context.Context, sessionID, groupID string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM session_comments WHERE session_id = $1 AND group_id = $2`,
+		sessionID, groupID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("group: count comments: %w", err)
+	}
+	return n, nil
+}
+
+// ListComments returns a session's comments newest-first, keyset-paginated on
+// (created_at, id). is_mine marks the viewer's own comments.
+func (r *postgresRepository) ListComments(ctx context.Context, sessionID, groupID, userID string, limit int, afterTime *time.Time, afterID *string) ([]CommentItem, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT c.id, c.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
+		        u.avatar_url, c.body, c.created_at, (c.user_id = $3) AS is_mine
+		   FROM session_comments c
+		   JOIN users u ON u.id = c.user_id
+		  WHERE c.session_id = $1 AND c.group_id = $2
+		    AND ($4::timestamptz IS NULL OR (c.created_at, c.id) < ($4, $5))
+		  ORDER BY c.created_at DESC, c.id DESC
+		  LIMIT $6`,
+		sessionID, groupID, userID, afterTime, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("group: list comments: %w", err)
+	}
+	defer rows.Close()
+
+	items := []CommentItem{}
+	for rows.Next() {
+		var it CommentItem
+		if err := rows.Scan(&it.ID, &it.UserID, &it.Name, &it.AvatarURL, &it.Body, &it.CreatedAt, &it.IsMine); err != nil {
+			return nil, fmt.Errorf("group: scan comment: %w", err)
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+func (r *postgresRepository) AddComment(ctx context.Context, sessionID, groupID, userID, body string) (*CommentItem, error) {
+	var it CommentItem
+	err := r.db.QueryRowContext(ctx,
+		`WITH ins AS (
+		     INSERT INTO session_comments (session_id, group_id, user_id, body)
+		     VALUES ($1, $2, $3, $4)
+		     RETURNING id, user_id, body, created_at
+		 )
+		 SELECT ins.id, ins.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
+		        u.avatar_url, ins.body, ins.created_at
+		   FROM ins JOIN users u ON u.id = ins.user_id`,
+		sessionID, groupID, userID, body).Scan(&it.ID, &it.UserID, &it.Name, &it.AvatarURL, &it.Body, &it.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("group: add comment: %w", err)
+	}
+	it.IsMine = true
+	return &it, nil
+}
+
+func (r *postgresRepository) DeleteComment(ctx context.Context, commentID, groupID, userID string) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM session_comments WHERE id = $1 AND group_id = $2 AND user_id = $3`,
+		commentID, groupID, userID)
+	if err != nil {
+		return false, fmt.Errorf("group: delete comment: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("group: delete comment rows: %w", err)
+	}
+	return n > 0, nil
 }

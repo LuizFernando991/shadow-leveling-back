@@ -76,7 +76,7 @@ func Setup() (*httptest.Server, *sql.DB, func(), error) {
 		UserMetrics:  userMetricsModule,
 		Workout:      workoutModule,
 		Leveling:     levelingModule,
-		Group:        group.NewModule(db, uploader, rl),
+		Group:        group.NewModule(db, uploader, rl, notificationModule.Notifier()),
 		Notification: notificationModule,
 	})
 	srv := httptest.NewServer(h)

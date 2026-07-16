@@ -50,12 +50,49 @@ type RankingEntry struct {
 
 // FeedItem is one completed workout shown in the group feed.
 type FeedItem struct {
-	SessionID   string    `json:"session_id"`
-	UserID      string    `json:"user_id"`
-	Name        string    `json:"name"`
-	WorkoutName string    `json:"workout_name"`
-	PhotoURL    *string   `json:"photo_url"`
-	CreatedAt   time.Time `json:"created_at"`
+	SessionID     string    `json:"session_id"`
+	UserID        string    `json:"user_id"`
+	Name          string    `json:"name"`
+	WorkoutName   string    `json:"workout_name"`
+	PhotoURL      *string   `json:"photo_url"`
+	CreatedAt     time.Time `json:"created_at"`
+	ReactionCount int       `json:"reaction_count"`
+	CommentCount  int       `json:"comment_count"`
+	MyReaction    *string   `json:"my_reaction"` // this viewer's emoji on this session, or null
+	TopEmoji      *string   `json:"top_emoji"`   // most-used emoji on this session (tie: earliest), or null
+}
+
+// ReactionCount is one emoji and how many members used it on a session.
+type ReactionCount struct {
+	Emoji string `json:"emoji"`
+	Count int    `json:"count"`
+}
+
+// SessionDetail is a completed workout viewed inside a group: the post header
+// plus its social state. Only sessions whose author is a member of the group
+// are visible here.
+type SessionDetail struct {
+	SessionID    string          `json:"session_id"`
+	UserID       string          `json:"user_id"`
+	Name         string          `json:"name"`
+	AvatarURL    *string         `json:"avatar_url"`
+	WorkoutName  string          `json:"workout_name"`
+	PhotoURL     *string         `json:"photo_url"`
+	CreatedAt    time.Time       `json:"created_at"`
+	Reactions    []ReactionCount `json:"reactions"`
+	MyReaction   *string         `json:"my_reaction"`
+	CommentCount int             `json:"comment_count"`
+}
+
+// CommentItem is one comment on a session, with its author's display fields.
+type CommentItem struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Name      string    `json:"name"`
+	AvatarURL *string   `json:"avatar_url"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	IsMine    bool      `json:"is_mine"`
 }
 
 // weekBounds returns the Monday and Sunday (date-only, inclusive) of the week
