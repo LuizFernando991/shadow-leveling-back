@@ -1228,7 +1228,7 @@ Membros ordenados por pontos da semana (desc). `name` = nickname (ou email).
 GET /groups/{id}/feed?cursor=&limit=
 ```
 
-Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (limit 1–100, padrão 20). O `created_at` é o horário do registro; o front agrupa por dia (Today/Yesterday). `photo_url` pode ser `null` (usar placeholder). `reaction_count`/`comment_count` são contadores **daquele grupo**; `my_reaction` é o emoji do usuário logado nessa sessão (ou `null`); `top_emoji` é o emoji mais usado na sessão (empate: o que apareceu primeiro), ou `null` se não houver reações.
+Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (limit 1–100, padrão 20). O `created_at` é o horário do registro; o front agrupa por dia (Today/Yesterday). `avatar_url` é a foto de perfil do autor e `photo_url` é a foto de progresso da sessão — são coisas diferentes, ambas podem ser `null` (usar placeholder). `reaction_count`/`comment_count` são contadores **daquele grupo**; `my_reaction` é o emoji do usuário logado nessa sessão (ou `null`); `top_emoji` é o emoji mais usado na sessão (empate: o que apareceu primeiro), ou `null` se não houver reações.
 
 ```json
 {
@@ -1237,6 +1237,7 @@ Sessões `complete` dos membros, mais recentes primeiro, paginadas por cursor (l
       "session_id": "uuid",
       "user_id": "uuid",
       "name": "Sung",
+      "avatar_url": "https://.../avatar.jpg",
       "workout_name": "Leg day",
       "photo_url": "https://.../photo.jpg",
       "created_at": "2026-07-10T12:00:00Z",
