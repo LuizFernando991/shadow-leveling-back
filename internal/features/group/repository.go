@@ -232,7 +232,7 @@ func (r *postgresRepository) WeeklyPoints(ctx context.Context, groupID string, f
 func (r *postgresRepository) Feed(ctx context.Context, groupID, userID string, limit int, afterTime *time.Time, afterID *string) ([]FeedItem, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT ws.id, w.user_id, COALESCE(u.nickname, split_part(u.email, '@', 1)) AS name,
-		        w.name AS workout_name, ws.photo_url, ws.created_at,
+		        u.avatar_url, w.name AS workout_name, ws.photo_url, ws.created_at,
 		        (SELECT COUNT(*) FROM session_reactions sr WHERE sr.session_id = ws.id AND sr.group_id = $1) AS reaction_count,
 		        (SELECT COUNT(*) FROM session_comments  sc WHERE sc.session_id = ws.id AND sc.group_id = $1) AS comment_count,
 		        (SELECT sr.emoji FROM session_reactions sr WHERE sr.session_id = ws.id AND sr.group_id = $1 AND sr.user_id = $2) AS my_reaction,
@@ -255,7 +255,7 @@ func (r *postgresRepository) Feed(ctx context.Context, groupID, userID string, l
 	items := []FeedItem{}
 	for rows.Next() {
 		var it FeedItem
-		if err := rows.Scan(&it.SessionID, &it.UserID, &it.Name, &it.WorkoutName, &it.PhotoURL, &it.CreatedAt,
+		if err := rows.Scan(&it.SessionID, &it.UserID, &it.Name, &it.AvatarURL, &it.WorkoutName, &it.PhotoURL, &it.CreatedAt,
 			&it.ReactionCount, &it.CommentCount, &it.MyReaction, &it.TopEmoji); err != nil {
 			return nil, fmt.Errorf("group: scan feed: %w", err)
 		}

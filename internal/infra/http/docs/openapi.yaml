@@ -2445,11 +2445,16 @@ components:
           format: uuid
         name:
           type: string
+        avatar_url:
+          type: string
+          nullable: true
+          description: The author's profile photo, or null.
         workout_name:
           type: string
         photo_url:
           type: string
           nullable: true
+          description: The session's progress photo, or null. Not the author's avatar.
         created_at:
           type: string
           format: date-time

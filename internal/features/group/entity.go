@@ -53,8 +53,9 @@ type FeedItem struct {
 	SessionID     string    `json:"session_id"`
 	UserID        string    `json:"user_id"`
 	Name          string    `json:"name"`
+	AvatarURL     *string   `json:"avatar_url"` // the author's profile photo
 	WorkoutName   string    `json:"workout_name"`
-	PhotoURL      *string   `json:"photo_url"`
+	PhotoURL      *string   `json:"photo_url"` // the session's progress photo, not the author's avatar
 	CreatedAt     time.Time `json:"created_at"`
 	ReactionCount int       `json:"reaction_count"`
 	CommentCount  int       `json:"comment_count"`
