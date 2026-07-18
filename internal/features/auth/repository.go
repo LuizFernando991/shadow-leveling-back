@@ -14,6 +14,7 @@ type Repository interface {
 	MarkUserVerified(ctx context.Context, email string) error
 	UpdateNickname(ctx context.Context, userID, nickname string) (*User, error)
 	UpdateAvatarURL(ctx context.Context, userID, url string) (*User, error)
+	UpdateWeeklyGoal(ctx context.Context, userID string, days *int) (*User, error)
 
 	CreateSession(ctx context.Context, userID, token, userAgent, ipAddress string, expiresAt *time.Time) (*Session, error)
 	FindSessionByToken(ctx context.Context, token string) (*Session, error)
@@ -45,9 +46,9 @@ func (r *postgresRepository) CreateUser(ctx context.Context, email string) (*Use
 	err := r.db.QueryRowContext(ctx,
 		`INSERT INTO users (email)
 		 VALUES ($1)
-		 RETURNING id, email, nickname, avatar_url, verified_at, created_at, updated_at`,
+		 RETURNING id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: create user: %w", err)
 	}
@@ -57,10 +58,10 @@ func (r *postgresRepository) CreateUser(ctx context.Context, email string) (*Use
 func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, nickname, avatar_url, verified_at, created_at, updated_at
+		`SELECT id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at
 		 FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user: %w", err)
 	}
@@ -70,10 +71,10 @@ func (r *postgresRepository) FindUserByEmail(ctx context.Context, email string) 
 func (r *postgresRepository) FindUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, nickname, avatar_url, verified_at, created_at, updated_at
+		`SELECT id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: find user by id: %w", err)
 	}
@@ -85,9 +86,9 @@ func (r *postgresRepository) UpdateNickname(ctx context.Context, userID, nicknam
 	err := r.db.QueryRowContext(ctx,
 		`UPDATE users SET nickname = $2, updated_at = NOW()
 		 WHERE id = $1
-		 RETURNING id, email, nickname, avatar_url, verified_at, created_at, updated_at`,
+		 RETURNING id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at`,
 		userID, nickname,
-	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: update nickname: %w", err)
 	}
@@ -99,11 +100,25 @@ func (r *postgresRepository) UpdateAvatarURL(ctx context.Context, userID, url st
 	err := r.db.QueryRowContext(ctx,
 		`UPDATE users SET avatar_url = $2, updated_at = NOW()
 		 WHERE id = $1
-		 RETURNING id, email, nickname, avatar_url, verified_at, created_at, updated_at`,
+		 RETURNING id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at`,
 		userID, url,
-	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("auth: update avatar url: %w", err)
+	}
+	return &u, nil
+}
+
+func (r *postgresRepository) UpdateWeeklyGoal(ctx context.Context, userID string, days *int) (*User, error) {
+	var u User
+	err := r.db.QueryRowContext(ctx,
+		`UPDATE users SET weekly_goal_days = $2, updated_at = NOW()
+		 WHERE id = $1
+		 RETURNING id, email, nickname, avatar_url, weekly_goal_days, verified_at, created_at, updated_at`,
+		userID, days,
+	).Scan(&u.ID, &u.Email, &u.Nickname, &u.AvatarURL, &u.WeeklyGoalDays, &u.VerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("auth: update weekly goal: %w", err)
 	}
 	return &u, nil
 }

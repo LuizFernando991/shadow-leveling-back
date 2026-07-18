@@ -3,13 +3,14 @@ package auth
 import "time"
 
 type User struct {
-	ID         string
-	Email      string
-	Nickname   *string
-	AvatarURL  *string
-	VerifiedAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID             string
+	Email          string
+	Nickname       *string
+	AvatarURL      *string
+	WeeklyGoalDays *int
+	VerifiedAt     *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type Session struct {

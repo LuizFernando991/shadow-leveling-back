@@ -45,11 +45,14 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	api := r.NewRoute().Subrouter()
 	api.Use(authMiddleware)
 
-	api.HandleFunc("/exercises", h.listExercises).Methods(http.MethodGet)
-	api.HandleFunc("/exercises", h.createExercise).Methods(http.MethodPost)
-	api.HandleFunc("/exercises/{id}", h.getExercise).Methods(http.MethodGet)
+api.HandleFunc("/exercises", h.listExercises).Methods(http.MethodGet)
+    api.HandleFunc("/exercises", h.createExercise).Methods(http.MethodPost)
+    api.HandleFunc("/exercises/{id}", h.getExercise).Methods(http.MethodGet)
+    // Substitute suggestions for the "máquina ocupada" swap flow. Auth'd like
+    // the other exercise routes; returns up to ?limit= matches + manual search.
+    api.HandleFunc("/exercises/{id}/substitutes", h.listSubstitutes).Methods(http.MethodGet)
 
-	api.HandleFunc("/workouts", h.listWorkouts).Methods(http.MethodGet)
+    api.HandleFunc("/workouts", h.listWorkouts).Methods(http.MethodGet)
 	api.HandleFunc("/workouts", h.createWorkout).Methods(http.MethodPost)
 	api.HandleFunc("/workouts/{id}", h.getWorkout).Methods(http.MethodGet)
 	api.HandleFunc("/workouts/{id}", h.updateWorkout).Methods(http.MethodPut)
@@ -132,6 +135,40 @@ func (h *Handler) getExercise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.JSON(w, http.StatusOK, e)
+}
+
+// listSubstitutes serves GET /exercises/{id}/substitutes?limit=. limit is an
+// optional integer; defaults to 3, clamped to [1, 10] by the service. Returns
+// {data: [...], total: N} — total is the number of matches returned (0..limit),
+// so the client can render an empty state without guessing.
+func (h *Handler) listSubstitutes(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+
+	limit := 0 // service replaces <=0 with the default (3)
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			httputil.Error(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		limit = n
+	}
+
+	subs, err := h.svc.ListSubstitutes(r.Context(), id, limit)
+	if errors.Is(err, ErrNotFound) {
+		httputil.Error(w, http.StatusNotFound, "exercise not found")
+		return
+	}
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, substitutesResponse{Data: subs, Total: len(subs)})
+}
+
+type substitutesResponse struct {
+	Data  []Exercise `json:"data"`
+	Total int        `json:"total"`
 }
 
 // ── Workouts ───────────────────────────────────────────────────────────────────

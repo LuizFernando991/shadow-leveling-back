@@ -17,6 +17,12 @@ type TaskService interface {
 	ListByDay(ctx context.Context, userID string, date time.Time) ([]task.TaskOccurrence, error)
 }
 
+// GoalReader reads the user's weekly-goal setting (days/week). nil goal means
+// the user hasn't defined a goal yet → scheduled=0 (frontend prompts to set).
+type GoalReader interface {
+	GetWeeklyGoalDays(ctx context.Context, userID string) (*int, error)
+}
+
 type Service interface {
 	GetTodayMissions(ctx context.Context, userID string) (*TodayMissionsResponse, error)
 	GetWeeklySummary(ctx context.Context, userID string) (*WeeklySummaryResponse, error)
@@ -25,13 +31,15 @@ type Service interface {
 type service struct {
 	workoutSvc WorkoutService
 	taskSvc    TaskService
+	goalReader GoalReader
 	now        func() time.Time
 }
 
-func NewService(workoutSvc WorkoutService, taskSvc TaskService) Service {
+func NewService(workoutSvc WorkoutService, taskSvc TaskService, goalReader GoalReader) Service {
 	return &service{
 		workoutSvc: workoutSvc,
 		taskSvc:    taskSvc,
+		goalReader: goalReader,
 		now:        time.Now,
 	}
 }
@@ -174,17 +182,16 @@ func (s *service) GetWeeklySummary(ctx context.Context, userID string) (*WeeklyS
 	now := dateOnly(s.now())
 	from, to := currentWeekRange(now)
 
-	workouts, err := s.workoutSvc.ListWorkouts(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Every active workout's days_of_week falls within the current week
-	// (seg-dom) by definition, so scheduled is the sum of scheduled days.
+	// Weekly goal is a user-set number of workouts/week. nil = not defined;
+	// scheduled=0 signals the frontend to prompt the user to define a goal.
 	scheduled := 0
-	for _, w := range workouts {
-		if w.Active {
-			scheduled += len(w.DaysOfWeek)
+	if s.goalReader != nil {
+		days, err := s.goalReader.GetWeeklyGoalDays(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if days != nil {
+			scheduled = *days
 		}
 	}
 

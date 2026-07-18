@@ -14,6 +14,7 @@ import (
 
 type Module struct {
 	handler    *Handler
+	svc        Service
 	middleware func(http.Handler) http.Handler
 }
 
@@ -22,6 +23,7 @@ func NewModule(db *sql.DB, cfg config.AuthConfig, sender email.Sender, limiter h
 	svc := NewService(repo, cfg, sender, verifier, uploader)
 	return &Module{
 		handler:    NewHandler(svc, limiter),
+		svc:        svc,
 		middleware: sharedmiddleware.Auth(svc),
 	}
 }
@@ -32,4 +34,10 @@ func (m *Module) RegisterRoutes(r *mux.Router) {
 
 func (m *Module) Middleware() func(http.Handler) http.Handler {
 	return m.middleware
+}
+
+// GoalReader returns the GoalReader backed by this module's service, for
+// other features (e.g. usermetrics) to read per-user weekly goal settings.
+func (m *Module) GoalReader() GoalReader {
+	return m.svc
 }

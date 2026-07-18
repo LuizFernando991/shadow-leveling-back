@@ -40,12 +40,20 @@ type Service interface {
 	VerifyEmailCode(ctx context.Context, req VerifyEmailRequest) (*Session, error)
 	SocialLogin(ctx context.Context, req SocialLoginRequest) (*Session, error)
 	Me(ctx context.Context, userID string) (*User, error)
+	GetWeeklyGoalDays(ctx context.Context, userID string) (*int, error)
 	UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error)
+	UpdateWeeklyGoal(ctx context.Context, userID string, req UpdateWeeklyGoalRequest) (*User, error)
 	UpdateAvatar(ctx context.Context, userID, contentType string, r io.Reader) (*User, error)
 	Logout(ctx context.Context, sessionID string) error
 	ListSessions(ctx context.Context, userID string) ([]*Session, error)
 	RevokeSession(ctx context.Context, userID, sessionID string) error
 	ValidateToken(ctx context.Context, token string) (*entities.Session, error)
+}
+
+// GoalReader exposes per-user goal reads to other features (usermetrics)
+// without leaking the full Service surface.
+type GoalReader interface {
+	GetWeeklyGoalDays(ctx context.Context, userID string) (*int, error)
 }
 
 type service struct {
@@ -199,6 +207,25 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		return nil, fmt.Errorf("auth: update profile: %w", err)
 	}
 	return user, nil
+}
+
+func (s *service) UpdateWeeklyGoal(ctx context.Context, userID string, req UpdateWeeklyGoalRequest) (*User, error) {
+	user, err := s.repo.UpdateWeeklyGoal(ctx, userID, req.WeeklyGoalDays)
+	if err != nil {
+		return nil, fmt.Errorf("auth: update weekly goal: %w", err)
+	}
+	return user, nil
+}
+
+func (s *service) GetWeeklyGoalDays(ctx context.Context, userID string) (*int, error) {
+	user, err := s.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrUnauthorized
+		}
+		return nil, fmt.Errorf("auth: get weekly goal: %w", err)
+	}
+	return user.WeeklyGoalDays, nil
 }
 
 // UpdateAvatar stores the image in the bucket under the user's id (overwriting

@@ -48,11 +48,12 @@ func main() {
 
 	levelingModule := leveling.NewModule(db)
 	notificationModule := notification.NewModule(db, pushSender)
+	authModule := auth.NewModule(db, cfg.Auth, emailSender, rateLimiter, socialVerifier, uploader)
 
 	modules := router.Modules{
-		Auth:         auth.NewModule(db, cfg.Auth, emailSender, rateLimiter, socialVerifier, uploader),
+		Auth:         authModule,
 		Task:         task.NewModule(db),
-		UserMetrics:  usermetrics.NewModule(db),
+		UserMetrics:  usermetrics.NewModule(db, authModule.GoalReader()),
 		Workout:      workout.NewModule(db, levelingModule.Awarder(), uploader, rateLimiter, notificationModule.Notifier()),
 		Leveling:     levelingModule,
 		Group:        group.NewModule(db, uploader, rateLimiter, notificationModule.Notifier()),

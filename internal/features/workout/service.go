@@ -39,11 +39,17 @@ var (
 
 const defaultPageSize = 20
 const maxWorkoutExercises = 50
+const defaultSubstituteLimit = 3
+const maxSubstituteLimit = 10
 
 type Service interface {
 	CreateExercise(ctx context.Context, req CreateExerciseRequest) (*Exercise, error)
 	GetExercise(ctx context.Context, id string) (*Exercise, error)
 	ListExercises(ctx context.Context, search, cursor string, limit int) (*entities.CursorPage[Exercise], error)
+	// ListSubstitutes returns up to limit strength-catalog exercises most
+	// similar to id (muscle overlap, force, mechanic). limit is clamped to
+	// [1, maxSubstituteLimit]. Returns ErrNotFound if id does not exist.
+	ListSubstitutes(ctx context.Context, id string, limit int) ([]Exercise, error)
 
 	CreateWorkout(ctx context.Context, userID string, req CreateWorkoutRequest) (*Workout, error)
 	GetWorkout(ctx context.Context, id, userID string) (*WorkoutDetail, error)
@@ -136,6 +142,31 @@ func (s *service) GetExercise(ctx context.Context, id string) (*Exercise, error)
 		return nil, fmt.Errorf("workout: get exercise: %w", err)
 	}
 	return e, nil
+}
+
+// ListSubstitutes resolves strength-exercise substitutes for id by delegating
+// to the repository's ranked SQL. It validates the origin exists (404) before
+// ranking, and clamps limit to [1, maxSubstituteLimit] so callers can pass an
+// unbounded user value. Returns an empty slice (not nil) when no substitutes
+// qualify — handlers wrap it in a {data, total} envelope.
+func (s *service) ListSubstitutes(ctx context.Context, id string, limit int) ([]Exercise, error) {
+	if _, err := s.GetExercise(ctx, id); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = defaultSubstituteLimit
+	}
+	if limit > maxSubstituteLimit {
+		limit = maxSubstituteLimit
+	}
+	subs, err := s.repo.ListSubstitutes(ctx, id, limit)
+	if err != nil {
+		return nil, fmt.Errorf("workout: list substitutes: %w", err)
+	}
+	if subs == nil {
+		subs = []Exercise{}
+	}
+	return subs, nil
 }
 
 func (s *service) ListExercises(ctx context.Context, search, cursor string, limit int) (*entities.CursorPage[Exercise], error) {

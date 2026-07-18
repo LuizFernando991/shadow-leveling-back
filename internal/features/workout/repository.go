@@ -12,6 +12,11 @@ type Repository interface {
 	CreateExercise(ctx context.Context, name string, etype ExerciseType, unit string) (*Exercise, error)
 	GetExercise(ctx context.Context, id string) (*Exercise, error)
 	ListExercises(ctx context.Context, search string, limit int, afterName, afterID *string) ([]Exercise, error)
+	// ListSubstitutes returns up to limit strength exercises most similar to the
+	// one identified by id, ranked by primary-muscle overlap, force, mechanic
+	// and same-equipment penalty. Excludes the origin exercise. Returns nil
+	// (no error) when the origin exists but has no suitable substitutes.
+	ListSubstitutes(ctx context.Context, id string, limit int) ([]Exercise, error)
 
 	CreateWorkout(ctx context.Context, userID, name string, description *string, days DaySlice) (*Workout, error)
 	GetWorkout(ctx context.Context, id string) (*Workout, error)
@@ -105,6 +110,117 @@ func (r *postgresRepository) ListExercises(ctx context.Context, search string, l
 		exercises = append(exercises, e)
 	}
 	return exercises, rows.Err()
+}
+
+// ── Substitutes ────────────────────────────────────────────────────────────────
+
+// exerciseCatalogCols selects the structured catalog attributes added in
+// migration 000025. Arrays are flattened with array_to_string so database/sql
+// can scan them as strings (precedent: scanWorkout / DaySlice).
+// exerciseCatalogCols selects the structured catalog attributes added in
+// migration 000025. The caller joins the `exercises` row AS `e` (origin CTE AS
+// `o`), so every column is qualified with `e.` to stay unambiguous when the
+// origin CTE has identically-named columns in scope. PT columns come right
+// after their EN counterparts for parity.
+const exerciseCatalogCols = `e.id, e.name, e.type, e.unit, e.created_at,
+    e.external_id,
+    array_to_string(e.primary_muscles, ','),   array_to_string(e.primary_muscles_pt, ','),
+    array_to_string(e.secondary_muscles, ','), array_to_string(e.secondary_muscles_pt, ','),
+    e.equipment, e.equipment_pt, e.force, e.level, e.level_pt, e.mechanic, e.mechanic_pt, e.category`
+
+func scanExerciseCatalog(s interface{ Scan(...any) error }, e *Exercise) error {
+	var pmStr, pmPtStr, smStr, smPtStr string
+	if err := s.Scan(
+		&e.ID, &e.Name, &e.Type, &e.Unit, &e.CreatedAt,
+		&e.ExternalID,
+		&pmStr, &pmPtStr, &smStr, &smPtStr,
+		&e.Equipment, &e.EquipmentPt, &e.Force,
+		&e.Level, &e.LevelPt, &e.Mechanic, &e.MechanicPt, &e.Category,
+	); err != nil {
+		return err
+	}
+	if pmStr != "" {
+		e.PrimaryMuscles = strings.Split(pmStr, ",")
+	}
+	if pmPtStr != "" {
+		e.PrimaryMusclesPt = strings.Split(pmPtStr, ",")
+	}
+	if smStr != "" {
+		e.SecondaryMuscles = strings.Split(smStr, ",")
+	}
+	if smPtStr != "" {
+		e.SecondaryMusclesPt = strings.Split(smPtStr, ",")
+	}
+	return nil
+}
+
+// ListSubstitutes implements Repository.ListSubstitutes.
+//
+// The ranking (Q16c: tri-sort + equipment penalty) is done entirely in SQL:
+//   - overlap of primary muscles (size of the INTERSECT of the two arrays):
+//     higher = better stimulus match. Postgres arrays have no set-intersection
+//     operator, so the intersection size is computed via a scalar subselect
+//     that unnests both arrays and counts shared members.
+//   - same force (push/pull/static): exercises with the same force vector rank up
+//   - same mechanic (compound/isolation): same time-under-tension profile
+//   - same equipment: penalized (ASC) so a duplicate-machine substitute sinks to
+//     the bottom — the "máquina ocupada" button should not suggest the same machine.
+//   - primary-muscle count delta: tie-breaker so a 2-primary origin prefers
+//     2-primary substitutes over 5-primary sprawlers.
+//
+// The origin's attributes are read in a CTE so we run a single round-trip.
+// If the origin doesn't exist the CTE is empty and the query returns no rows.
+//
+// When the origin has empty primary_muscles — a user-created exercise with no
+// catalog data (POST /exercises pre-000025) — the ranking degenerates: every
+// candidate ties at overlap=0 and the "muscle count delta" tiebreaker pushes
+// 1-muscle isolation exercises (like abdominals) to the top, producing nonsense
+// suggestions such as "Abdominal" as a substitute for "Leg Press". The guard
+// `cardinality(o.primary_muscles) > 0` short-circuits this case: no overlap is
+// possible, so we return no suggestions and the client falls back to manual
+// search — which is the real UX for a custom exercise with no metadata.
+func (r *postgresRepository) ListSubstitutes(ctx context.Context, id string, limit int) ([]Exercise, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`WITH origin AS (
+		     SELECT primary_muscles, force, mechanic, equipment
+		     FROM exercises
+		     WHERE id = $1
+		 )
+		 SELECT `+exerciseCatalogCols+`
+		 FROM exercises e, origin o
+		 WHERE e.id <> $1
+		   AND e.category = 'strength'
+		   AND cardinality(o.primary_muscles) > 0
+		 ORDER BY
+		     (SELECT count(*) FROM (
+		         SELECT unnest(e.primary_muscles) AS m
+		         INTERSECT
+		         SELECT unnest(o.primary_muscles) AS m
+		     ) AS i) DESC,
+		     (e.force IS NOT NULL AND o.force IS NOT NULL AND e.force = o.force)::int DESC,
+		     (e.mechanic IS NOT NULL AND o.mechanic IS NOT NULL AND e.mechanic = o.mechanic)::int DESC,
+		     (e.equipment IS NOT NULL AND o.equipment IS NOT NULL AND e.equipment = o.equipment)::int ASC,
+		     ABS(cardinality(e.primary_muscles) - cardinality(o.primary_muscles))
+		 LIMIT $2`,
+		id, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("workout: list substitutes: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []Exercise
+	for rows.Next() {
+		var e Exercise
+		if err := scanExerciseCatalog(rows, &e); err != nil {
+			return nil, fmt.Errorf("workout: scan substitute: %w", err)
+		}
+		subs = append(subs, e)
+	}
+	if subs == nil {
+		subs = []Exercise{}
+	}
+	return subs, rows.Err()
 }
 
 // ── Workouts ───────────────────────────────────────────────────────────────────

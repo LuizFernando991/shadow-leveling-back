@@ -36,6 +36,15 @@ func (f fakeTaskService) ListByDay(ctx context.Context, userID string, date time
 	return f.items, f.err
 }
 
+type fakeGoalReader struct {
+	days *int
+	err  error
+}
+
+func (f fakeGoalReader) GetWeeklyGoalDays(ctx context.Context, userID string) (*int, error) {
+	return f.days, f.err
+}
+
 func TestGetTodayMissionsBuildsProgress(t *testing.T) {
 	svc := NewService(
 		&fakeWorkoutService{
@@ -91,6 +100,7 @@ func TestGetTodayMissionsBuildsProgress(t *testing.T) {
 				},
 			},
 		},
+		fakeGoalReader{},
 	).(*service)
 
 	svc.now = func() time.Time { return mustDate(t, "2026-04-22") }
@@ -129,6 +139,7 @@ func TestGetTodayMissionsWeekendHasNoWorkoutMissions(t *testing.T) {
 			},
 		},
 		fakeTaskService{},
+		fakeGoalReader{},
 	).(*service)
 
 	svc.now = func() time.Time { return mustDate(t, "2026-04-26") }
@@ -144,7 +155,7 @@ func TestGetTodayMissionsWeekendHasNoWorkoutMissions(t *testing.T) {
 
 func TestGetTodayMissionsPropagatesErrors(t *testing.T) {
 	wantErr := errors.New("boom")
-	svc := NewService(&fakeWorkoutService{err: wantErr}, fakeTaskService{}).(*service)
+	svc := NewService(&fakeWorkoutService{err: wantErr}, fakeTaskService{}, fakeGoalReader{}).(*service)
 	svc.now = func() time.Time { return mustDate(t, "2026-04-22") }
 
 	_, err := svc.GetTodayMissions(context.Background(), "user-1")
@@ -162,34 +173,10 @@ func mustDate(t *testing.T, value string) time.Time {
 	return d
 }
 
-func TestGetWeeklySummaryCountsScheduledDays(t *testing.T) {
-	ws := &fakeWorkoutService{
-		items: []workout.WorkoutDetail{
-			{
-				Workout: workout.Workout{
-					ID:         "w1",
-					DaysOfWeek: workout.DaySlice{workout.Monday, workout.Wednesday, workout.Friday},
-					Active:     true,
-				},
-			},
-			{
-				Workout: workout.Workout{
-					ID:         "w2",
-					DaysOfWeek: workout.DaySlice{workout.Tuesday, workout.Thursday},
-					Active:     true,
-				},
-			},
-			{
-				Workout: workout.Workout{
-					ID:         "w3",
-					DaysOfWeek: workout.DaySlice{workout.Saturday},
-					Active:     false,
-				},
-			},
-		},
-		countCompletedSessions: 4,
-	}
-	svc := NewService(ws, fakeTaskService{}).(*service)
+func TestGetWeeklySummaryUsesUserGoal(t *testing.T) {
+	ws := &fakeWorkoutService{countCompletedSessions: 4}
+	goal := 5
+	svc := NewService(ws, fakeTaskService{}, fakeGoalReader{days: &goal}).(*service)
 	svc.now = func() time.Time { return mustDate(t, "2026-04-22") } // Wednesday
 
 	resp, err := svc.GetWeeklySummary(context.Background(), "user-1")
@@ -204,6 +191,23 @@ func TestGetWeeklySummaryCountsScheduledDays(t *testing.T) {
 	}
 	if ws.countCompletedSessionsCalls != 1 {
 		t.Fatalf("CountCompletedSessions calls = %d, want 1", ws.countCompletedSessionsCalls)
+	}
+}
+
+func TestGetWeeklySummaryUndefinedGoalIsZero(t *testing.T) {
+	ws := &fakeWorkoutService{countCompletedSessions: 2}
+	svc := NewService(ws, fakeTaskService{}, fakeGoalReader{days: nil}).(*service)
+	svc.now = func() time.Time { return mustDate(t, "2026-04-22") }
+
+	resp, err := svc.GetWeeklySummary(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("GetWeeklySummary() error = %v", err)
+	}
+	if resp.Goal.Scheduled != 0 {
+		t.Fatalf("scheduled = %d, want 0 when goal undefined", resp.Goal.Scheduled)
+	}
+	if resp.Goal.Completed != 2 {
+		t.Fatalf("completed = %d, want 2", resp.Goal.Completed)
 	}
 }
 
@@ -227,6 +231,7 @@ func TestGetTodayMissionsPopulatesDurationAndExerciseCount(t *testing.T) {
 			},
 		},
 		fakeTaskService{},
+		fakeGoalReader{},
 	).(*service)
 	svc.now = func() time.Time { return mustDate(t, "2026-04-22") }
 

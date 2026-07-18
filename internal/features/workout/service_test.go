@@ -372,6 +372,109 @@ func TestServiceAnalytics(t *testing.T) {
 	})
 }
 
+func TestServiceListSubstitutes(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("applies default limit when omitted", func(t *testing.T) {
+		repo := &fakeRepository{
+			exercise:             &Exercise{ID: "origin-1"},
+			listSubstitutesResult: []Exercise{{ID: "sub-1"}, {ID: "sub-2"}, {ID: "sub-3"}},
+		}
+		svc := NewService(repo, nil, nil, nil)
+
+		got, err := svc.ListSubstitutes(ctx, "origin-1", 0)
+		if err != nil {
+			t.Fatalf("ListSubstitutes() error = %v", err)
+		}
+		if len(got) != defaultSubstituteLimit {
+			t.Fatalf("len = %d, want %d", len(got), defaultSubstituteLimit)
+		}
+		if repo.listSubstitutesLimit != defaultSubstituteLimit {
+			t.Fatalf("repo limit = %d, want %d", repo.listSubstitutesLimit, defaultSubstituteLimit)
+		}
+		if repo.listSubstitutesID != "origin-1" {
+			t.Fatalf("repo id = %q, want origin-1", repo.listSubstitutesID)
+		}
+	})
+
+	t.Run("clamps limit to maxSubstituteLimit", func(t *testing.T) {
+		repo := &fakeRepository{exercise: &Exercise{ID: "origin-1"}}
+		svc := NewService(repo, nil, nil, nil)
+
+		if _, err := svc.ListSubstitutes(ctx, "origin-1", 50); err != nil {
+			t.Fatalf("ListSubstitutes() error = %v", err)
+		}
+		if repo.listSubstitutesLimit != maxSubstituteLimit {
+			t.Fatalf("repo limit = %d, want %d", repo.listSubstitutesLimit, maxSubstituteLimit)
+		}
+	})
+
+	t.Run("returns ErrNotFound when origin exercise is missing", func(t *testing.T) {
+		repo := &fakeRepository{exerciseErr: sql.ErrNoRows}
+		svc := NewService(repo, nil, nil, nil)
+
+		_, err := svc.ListSubstitutes(ctx, "missing", 3)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("ListSubstitutes() error = %v, want %v", err, ErrNotFound)
+		}
+		if repo.listSubstitutesID != "" {
+			t.Fatalf("repo.ListSubstitutes should NOT be called when origin is missing, id=%q", repo.listSubstitutesID)
+		}
+	})
+
+	t.Run("normalizes nil result to empty slice", func(t *testing.T) {
+		repo := &fakeRepository{exercise: &Exercise{ID: "origin-1"}}
+		svc := NewService(repo, nil, nil, nil)
+
+		got, err := svc.ListSubstitutes(ctx, "origin-1", 3)
+		if err != nil {
+			t.Fatalf("ListSubstitutes() error = %v", err)
+		}
+		if got == nil {
+			t.Fatal("got = nil, want empty slice")
+		}
+		if len(got) != 0 {
+			t.Fatalf("len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("passes through repository error", func(t *testing.T) {
+		repo := &fakeRepository{
+			exercise:          &Exercise{ID: "origin-1"},
+			listSubstitutesErr: errors.New("boom"),
+		}
+		svc := NewService(repo, nil, nil, nil)
+
+		_, err := svc.ListSubstitutes(ctx, "origin-1", 3)
+		if err == nil {
+			t.Fatal("error = nil, want boom")
+		}
+	})
+
+	// Regression: when the origin exercise has no primary_muscles (a user-created
+	// custom exercise with no catalog data), the repository must return an empty
+	// slice instead of letting the ranking degenerate into suggesting random
+	// 1-muscle isolation exercises. The service layer doesn't enforce this —
+	// the SQL guard `cardinality(o.primary_muscles) > 0` does — but the contract
+	// `ListSubstitutes -> []` holds and the client falls back to manual search.
+	t.Run("returns empty when origin has empty primary_muscles", func(t *testing.T) {
+		emptyMuscles := &Exercise{ID: "custom-1", PrimaryMuscles: []string{}}
+		repo := &fakeRepository{
+			exercise:             emptyMuscles,
+			listSubstitutesResult: []Exercise{}, // repo returns empty (SQL guard)
+		}
+		svc := NewService(repo, nil, nil, nil)
+
+		got, err := svc.ListSubstitutes(ctx, "custom-1", 3)
+		if err != nil {
+			t.Fatalf("ListSubstitutes() error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("len = %d, want 0 (origin has no muscles — no suggestion is meaningful)", len(got))
+		}
+	})
+}
+
 func makeExercises(n int) []Exercise {
 	exercises := make([]Exercise, n)
 	for i := range exercises {
@@ -458,6 +561,11 @@ type fakeRepository struct {
 
 	countCompletedSessionsResult int
 	countCompletedSessionsErr    error
+
+	listSubstitutesResult []Exercise
+	listSubstitutesErr    error
+	listSubstitutesID     string
+	listSubstitutesLimit  int
 }
 
 func (r *fakeRepository) CreateExercise(ctx context.Context, name string, etype ExerciseType, unit string) (*Exercise, error) {
@@ -684,4 +792,13 @@ func (r *fakeRepository) GetMissedSessions(ctx context.Context, userID string, f
 
 func (r *fakeRepository) CountCompletedSessionsBetween(ctx context.Context, userID string, from, to time.Time) (int, error) {
 	return r.countCompletedSessionsResult, r.countCompletedSessionsErr
+}
+
+func (r *fakeRepository) ListSubstitutes(ctx context.Context, id string, limit int) ([]Exercise, error) {
+	r.listSubstitutesID = id
+	r.listSubstitutesLimit = limit
+	if r.listSubstitutesErr != nil {
+		return nil, r.listSubstitutesErr
+	}
+	return r.listSubstitutesResult, nil
 }

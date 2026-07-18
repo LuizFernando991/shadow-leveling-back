@@ -215,6 +215,36 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /auth/me/weekly-goal:
+    patch:
+      tags: [Auth]
+      summary: Set the weekly workout goal (days/week)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weekly_goal_days]
+              properties:
+                weekly_goal_days:
+                  type: integer
+                  minimum: 1
+                  description: Target number of workouts per week (no upper bound).
+      responses:
+        '200':
+          description: User with the updated weekly goal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/logout:
     post:
       tags: [Auth]
@@ -1700,6 +1730,10 @@ components:
         avatar_url:
           type: string
           nullable: true
+        weekly_goal_days:
+          type: integer
+          nullable: true
+          description: User's weekly workout goal (days/week). null = not yet defined.
         created_at:
           type: string
           format: date-time

@@ -18,6 +18,27 @@ type Exercise struct {
 	Type      ExerciseType `json:"type"`
 	Unit      string       `json:"unit"`
 	CreatedAt time.Time    `json:"created_at"`
+
+	// Catalog attributes imported from exerciseapi.dev via migration 000025.
+	// Populated only when loaded from the import catalog; user-created
+	// exercises (POST /exercises) leave these nil. JSON omitempty keeps the
+	// legacy response shape stable for callers that don't use them.
+	ExternalID        *string  `json:"external_id,omitempty"`
+	PrimaryMuscles    []string `json:"primary_muscles,omitempty"`
+	SecondaryMuscles  []string `json:"secondary_muscles,omitempty"`
+	Equipment         *string  `json:"equipment,omitempty"`
+	Force             *string  `json:"force,omitempty"`
+	Level             *string  `json:"level,omitempty"`
+	Mechanic          *string  `json:"mechanic,omitempty"`
+	Category          *string  `json:"category,omitempty"`
+	// PT translations (display layer). Filled when the imported catalog has a
+	// translation; NULL for user-created exercises or any untranslated upstream
+	// value (graceful fallback to EN in the UI).
+	PrimaryMusclesPt   []string `json:"primary_muscles_pt,omitempty"`
+	SecondaryMusclesPt []string `json:"secondary_muscles_pt,omitempty"`
+	EquipmentPt        *string  `json:"equipment_pt,omitempty"`
+	LevelPt            *string  `json:"level_pt,omitempty"`
+	MechanicPt         *string  `json:"mechanic_pt,omitempty"`
 }
 
 type DayOfWeek string

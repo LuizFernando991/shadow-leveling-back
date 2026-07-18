@@ -41,23 +41,29 @@ type SessionResponse struct {
 }
 
 type UserResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Nickname  *string   `json:"nickname"`
-	AvatarURL *string   `json:"avatar_url"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Email          string    `json:"email"`
+	Nickname       *string   `json:"nickname"`
+	AvatarURL      *string   `json:"avatar_url"`
+	WeeklyGoalDays *int      `json:"weekly_goal_days"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func newUserResponse(u *User) UserResponse {
 	return UserResponse{
-		ID:        u.ID,
-		Email:     u.Email,
-		Nickname:  u.Nickname,
-		AvatarURL: u.AvatarURL,
-		CreatedAt: u.CreatedAt,
+		ID:             u.ID,
+		Email:          u.Email,
+		Nickname:       u.Nickname,
+		AvatarURL:      u.AvatarURL,
+		WeeklyGoalDays: u.WeeklyGoalDays,
+		CreatedAt:      u.CreatedAt,
 	}
 }
 
 type UpdateProfileRequest struct {
 	Nickname string `json:"nickname" validate:"required,min=2,max=30"`
+}
+
+type UpdateWeeklyGoalRequest struct {
+	WeeklyGoalDays *int `json:"weekly_goal_days" validate:"required,min=1"`
 }

@@ -2,6 +2,7 @@
 bin/
 *.exe
 *.out
+/fetch_exercises
 
 # Environment
 .env

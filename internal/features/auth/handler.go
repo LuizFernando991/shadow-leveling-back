@@ -55,6 +55,7 @@ func (h *Handler) RegisterRoutes(r *mux.Router, authMiddleware func(http.Handler
 	private.HandleFunc("/me", h.me).Methods(http.MethodGet)
 	private.HandleFunc("/me", h.updateProfile).Methods(http.MethodPatch)
 	private.HandleFunc("/me/avatar", h.updateAvatar).Methods(http.MethodPatch)
+	private.HandleFunc("/me/weekly-goal", h.updateWeeklyGoal).Methods(http.MethodPatch)
 	private.HandleFunc("/logout", h.logout).Methods(http.MethodPost)
 	private.HandleFunc("/sessions", h.listSessions).Methods(http.MethodGet)
 	private.HandleFunc("/sessions/{id}", h.revokeSession).Methods(http.MethodDelete)
@@ -164,6 +165,25 @@ func (h *Handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := h.svc.UpdateProfile(r.Context(), session.UserID, req)
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	httputil.JSON(w, http.StatusOK, newUserResponse(user))
+}
+
+func (h *Handler) updateWeeklyGoal(w http.ResponseWriter, r *http.Request) {
+	session := httputil.SessionFromContext(r.Context())
+	var req UpdateWeeklyGoalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validate.Struct(req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, err := h.svc.UpdateWeeklyGoal(r.Context(), session.UserID, req)
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal server error")
 		return

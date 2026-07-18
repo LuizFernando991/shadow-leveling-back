@@ -18,6 +18,9 @@ test/integration:
 
 test: test/unit test/integration
 
+fetch-exercises:
+	@go run ./cmd/fetch_exercises
+
 infra/up:
 	@docker compose up -d postgres redis
 
