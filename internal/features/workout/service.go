@@ -532,13 +532,10 @@ func (s *service) AttachSessionPhoto(ctx context.Context, id, userID, contentTyp
 	if err := s.ownsSession(ctx, id, userID); err != nil {
 		return nil, err
 	}
-	ext, ok := storage.ExtForContentType(contentType)
-	if !ok {
+	if !storage.SupportedImage(contentType) {
 		return nil, ErrUnsupportedImage
 	}
-	// Per-user folder so any future user photo route just adds another
-	// subfolder under <userID>/. Group covers stay flat (not user-owned).
-	url, err := s.uploader.Upload(ctx, userID+"/workout-photos/"+id+ext, contentType, r)
+	url, err := s.uploader.Upload(ctx, storage.SessionPhotoPath(userID, id), contentType, r)
 	if err != nil {
 		return nil, fmt.Errorf("workout: upload photo: %w", err)
 	}

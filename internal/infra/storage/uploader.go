@@ -6,7 +6,7 @@ import (
 )
 
 // Uploader stores an object and returns a URL that can later be used to read it.
-// path is the object key within the bucket (e.g. "workout-photos/<id>.jpg").
+// path is the object key within the bucket (see AvatarPath and friends below).
 type Uploader interface {
 	Upload(ctx context.Context, path, contentType string, r io.Reader) (url string, err error)
 }
@@ -25,15 +25,28 @@ func (u *noopUploader) Upload(_ context.Context, path, _ string, r io.Reader) (s
 	return "https://noop.local/" + path, nil
 }
 
-// ExtForContentType returns the file extension for a supported image type.
-// ok is false for anything other than JPEG/PNG.
-func ExtForContentType(contentType string) (ext string, ok bool) {
-	switch contentType {
-	case "image/jpeg":
-		return ".jpg", true
-	case "image/png":
-		return ".png", true
-	default:
-		return "", false
-	}
+// SupportedImage reports whether contentType is an image format we accept.
+func SupportedImage(contentType string) bool {
+	return contentType == "image/jpeg" || contentType == "image/png"
 }
+
+// Object keys are grouped by the *owner* of the resource, so everything
+// belonging to one owner can be swept with a single prefix listing:
+// "users/<id>/" for an account, "groups/<id>/" for a group. Group covers are
+// deliberately not under users/ — a group outlives its owner's account.
+//
+// Keys carry no file extension: the object's Content-Type decides how it
+// renders, and a fixed key means re-uploading truly overwrites instead of
+// orphaning the old object when the format changes (jpeg -> png).
+
+// AvatarPath is the key for a user's profile photo. Overwritten on each upload.
+func AvatarPath(userID string) string { return "users/" + userID + "/avatar" }
+
+// SessionPhotoPath is the key for a workout session's progress photo. Unique
+// per session, so these accumulate rather than overwrite.
+func SessionPhotoPath(userID, sessionID string) string {
+	return "users/" + userID + "/sessions/" + sessionID
+}
+
+// CoverPath is the key for a group's cover image. Overwritten on each upload.
+func CoverPath(groupID string) string { return "groups/" + groupID + "/cover" }

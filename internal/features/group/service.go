@@ -352,12 +352,11 @@ func (s *service) SetCover(ctx context.Context, groupID, userID, contentType str
 	if g.OwnerID != userID {
 		return nil, ErrForbidden
 	}
-	ext, ok := storage.ExtForContentType(contentType)
-	if !ok {
+	if !storage.SupportedImage(contentType) {
 		return nil, ErrUnsupportedImage
 	}
 
-	url, err := s.uploader.Upload(ctx, "group-covers/"+groupID+ext, contentType, r)
+	url, err := s.uploader.Upload(ctx, storage.CoverPath(groupID), contentType, r)
 	if err != nil {
 		return nil, fmt.Errorf("group: upload cover: %w", err)
 	}

@@ -231,11 +231,10 @@ func (s *service) GetWeeklyGoalDays(ctx context.Context, userID string) (*int, e
 // UpdateAvatar stores the image in the bucket under the user's id (overwriting
 // any previous avatar) and saves the resulting URL on the user.
 func (s *service) UpdateAvatar(ctx context.Context, userID, contentType string, r io.Reader) (*User, error) {
-	ext, ok := storage.ExtForContentType(contentType)
-	if !ok {
+	if !storage.SupportedImage(contentType) {
 		return nil, ErrUnsupportedImage
 	}
-	url, err := s.uploader.Upload(ctx, "avatars/"+userID+ext, contentType, r)
+	url, err := s.uploader.Upload(ctx, storage.AvatarPath(userID), contentType, r)
 	if err != nil {
 		return nil, fmt.Errorf("auth: upload avatar: %w", err)
 	}
